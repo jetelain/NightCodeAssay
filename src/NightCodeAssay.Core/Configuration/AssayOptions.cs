@@ -26,7 +26,7 @@ public sealed class AssayOptions
 
     public string Hotkey { get; set; } = "Ctrl+Alt+S";
 
-    public bool CaptureActiveWindowOnly { get; set; }
+    public bool CaptureActiveWindowOnly { get; set; } = true;
 
     public int CdpPort { get; set; } = 9222;
 

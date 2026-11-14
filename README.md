@@ -89,7 +89,7 @@ dotnet publish src/NightCodeAssay.App/NightCodeAssay.App.csproj -p:PublishAot=tr
     "ConfigDirectory": ""
   },
   "Hotkey": "Ctrl+Alt+S",
-  "CaptureActiveWindowOnly": false,
+  "CaptureActiveWindowOnly": true,
   "CdpPort": 9222,
   "SessionsDirectory": "./sessions",
   "LogFilePaths": [],

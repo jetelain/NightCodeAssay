@@ -64,7 +64,7 @@ public sealed partial class SessionControlViewModel : ObservableObject
     private string _statusMessage = "Ready in Standalone Mode. Start a session or press Ctrl+Alt+S to capture.";
 
     [ObservableProperty]
-    private bool _captureActiveWindowOnly;
+    private bool _captureActiveWindowOnly = true;
 
     [ObservableProperty]
     private bool _isBusy;
