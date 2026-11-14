@@ -101,3 +101,15 @@ public sealed record CreateCompanionIdeationResponseDto
     [JsonIgnore]
     public string? EffectiveUrl => !string.IsNullOrWhiteSpace(IdeationUrl) ? IdeationUrl : Url;
 }
+
+[JsonSourceGenerationOptions(PropertyNameCaseInsensitive = true)]
+[JsonSerializable(typeof(CompanionConfigDto))]
+[JsonSerializable(typeof(CompanionOpenAiConfigDto))]
+[JsonSerializable(typeof(CompanionWorkspacesResponseDto))]
+[JsonSerializable(typeof(CompanionWorkspaceDto))]
+[JsonSerializable(typeof(IReadOnlyList<CompanionWorkspaceDto>))]
+[JsonSerializable(typeof(CreateCompanionIdeationRequestDto))]
+[JsonSerializable(typeof(CreateCompanionIdeationResponseDto))]
+public partial class CompanionJsonSerializerContext : JsonSerializerContext
+{
+}

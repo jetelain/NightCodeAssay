@@ -1,3 +1,4 @@
+using System.Text.Json;
 using Microsoft.Extensions.AI;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
@@ -5,6 +6,8 @@ using NightCodeAssay.Core.Configuration;
 using NightCodeAssay.Core.Models;
 using NightCodeAssay.Core.Services;
 using NightCodeAssay.Infrastructure.Capture;
+using OllamaSharp;
+using OllamaChatModels = OllamaSharp.Models.Chat;
 
 namespace NightCodeAssay.Tests;
 
@@ -173,6 +176,67 @@ public sealed class ChatClientVisionAnalyzerTests
 
         Assert.Equal(3, attempts);
         Assert.Equal("Recovered visual analysis after warm-up.", result);
+    }
+
+    [Fact]
+    public void OllamaApiClient_WithOllamaJsonSerializerContext_ConfiguresTypeInfoResolverAndRoundTripsChatModels()
+    {
+        using var httpClient = new HttpClient { BaseAddress = new Uri("http://localhost:11434/") };
+        using var client = new OllamaApiClient(httpClient, "llama3.2-vision", OllamaJsonSerializerContext.Default);
+
+        Assert.Same(OllamaJsonSerializerContext.Default, client.Config.JsonSerializerContext);
+        Assert.Same(OllamaJsonSerializerContext.Default, client.OutgoingJsonSerializerOptions.TypeInfoResolver);
+        Assert.Same(OllamaJsonSerializerContext.Default, client.IncomingJsonSerializerOptions.TypeInfoResolver);
+
+        var request = new OllamaChatModels.ChatRequest
+        {
+            Model = "llama3.2-vision",
+            Stream = false,
+            Messages =
+            [
+                new OllamaChatModels.Message(OllamaChatModels.ChatRole.User, "Describe screenshot", ["AQID"])
+            ]
+        };
+
+        var requestJson = JsonSerializer.Serialize(request, client.OutgoingJsonSerializerOptions);
+        var roundTrippedRequest = JsonSerializer.Deserialize<OllamaChatModels.ChatRequest>(
+            requestJson,
+            client.IncomingJsonSerializerOptions);
+
+        Assert.NotNull(roundTrippedRequest);
+        Assert.Equal("llama3.2-vision", roundTrippedRequest!.Model);
+        Assert.False(roundTrippedRequest.Stream);
+        Assert.Single(roundTrippedRequest.Messages!);
+
+        const string donePayload = """
+            {
+              "model": "llama3.2-vision",
+              "created_at": "2026-11-14T10:20:00Z",
+              "message": { "role": "assistant", "content": "Button aligned." },
+              "done": true,
+              "done_reason": "stop",
+              "total_duration": 1000000,
+              "load_duration": 500000,
+              "prompt_eval_count": 10,
+              "prompt_eval_duration": 200000,
+              "eval_count": 5,
+              "eval_duration": 300000
+            }
+            """;
+
+        var chunk = JsonSerializer.Deserialize<OllamaChatModels.ChatResponseStream>(
+            donePayload,
+            client.IncomingJsonSerializerOptions);
+        var done = JsonSerializer.Deserialize<OllamaChatModels.ChatDoneResponseStream>(
+            donePayload,
+            client.IncomingJsonSerializerOptions);
+
+        Assert.NotNull(chunk);
+        Assert.True(chunk!.Done);
+        Assert.NotNull(done);
+        Assert.Equal("Button aligned.", done!.Message.Content);
+        Assert.Equal("stop", done.DoneReason);
+        Assert.Equal(10, done.PromptEvalCount);
     }
 
     private sealed class FakeChatClient : IChatClient

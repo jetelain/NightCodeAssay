@@ -288,7 +288,7 @@ public sealed class ChatClientVisionAnalyzer : IVisionAnalyzer
             Timeout = Timeout.InfiniteTimeSpan
         };
 
-        return new OllamaApiClient(httpClient, config.ModelId, null);
+        return new OllamaApiClient(httpClient, config.ModelId, OllamaJsonSerializerContext.Default);
     }
 
     private static SocketsHttpHandler CreateSocketsHttpHandler() => new()

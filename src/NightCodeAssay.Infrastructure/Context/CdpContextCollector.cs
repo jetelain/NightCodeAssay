@@ -2,7 +2,6 @@ using System.Globalization;
 using System.Net.WebSockets;
 using System.Text;
 using System.Text.Json;
-using System.Text.Json.Serialization;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using NightCodeAssay.Core.Configuration;
@@ -760,8 +759,29 @@ public sealed class CdpContextCollector : IAsyncDisposable, IDisposable
             }
 
             await using var stream = await response.Content.ReadAsStreamAsync(timeoutCts.Token).ConfigureAwait(false);
-            var targets = await JsonSerializer.DeserializeAsync<List<CdpTargetDto>>(stream, cancellationToken: timeoutCts.Token).ConfigureAwait(false);
-            if (targets is null || targets.Count == 0)
+            using var document = await JsonDocument.ParseAsync(stream, cancellationToken: timeoutCts.Token).ConfigureAwait(false);
+            if (document.RootElement.ValueKind != JsonValueKind.Array)
+            {
+                return null;
+            }
+
+            var targets = new List<CdpTargetDto>();
+            foreach (var element in document.RootElement.EnumerateArray())
+            {
+                if (element.ValueKind == JsonValueKind.Object)
+                {
+                    targets.Add(new CdpTargetDto
+                    {
+                        Id = TryGetString(element, "id"),
+                        Type = TryGetString(element, "type"),
+                        Title = TryGetString(element, "title"),
+                        Url = TryGetString(element, "url"),
+                        WebSocketDebuggerUrl = TryGetString(element, "webSocketDebuggerUrl")
+                    });
+                }
+            }
+
+            if (targets.Count == 0)
             {
                 return null;
             }
@@ -1181,19 +1201,10 @@ public sealed class CdpContextCollector : IAsyncDisposable, IDisposable
 
     private sealed record CdpTargetDto
     {
-        [JsonPropertyName("id")]
         public string? Id { get; init; }
-
-        [JsonPropertyName("type")]
         public string? Type { get; init; }
-
-        [JsonPropertyName("title")]
         public string? Title { get; init; }
-
-        [JsonPropertyName("url")]
         public string? Url { get; init; }
-
-        [JsonPropertyName("webSocketDebuggerUrl")]
         public string? WebSocketDebuggerUrl { get; init; }
     }
 }

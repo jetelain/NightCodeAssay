@@ -16,8 +16,6 @@ namespace NightCodeAssay.Infrastructure.Companion;
 /// </summary>
 public sealed class NightCodeForgeCompanionClient : INightCodeForgeClient
 {
-    private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web);
-
     private readonly HttpClient _httpClient;
     private readonly IOptions<AssayOptions> _options;
     private readonly IDefaultKeyReader _defaultKeyReader;
@@ -54,7 +52,9 @@ public sealed class NightCodeForgeCompanionClient : INightCodeForgeClient
             }
 
             IsConnected = true;
-            return await response.Content.ReadFromJsonAsync<CompanionConfigDto>(JsonOptions, timeoutCts.Token).ConfigureAwait(false);
+            return await response.Content.ReadFromJsonAsync(
+                CompanionJsonSerializerContext.Default.CompanionConfigDto,
+                timeoutCts.Token).ConfigureAwait(false);
         }
         catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException or JsonException or InvalidOperationException)
         {
@@ -81,7 +81,9 @@ public sealed class NightCodeForgeCompanionClient : INightCodeForgeClient
             }
 
             IsConnected = true;
-            var payload = await response.Content.ReadFromJsonAsync<CompanionWorkspacesResponseDto>(JsonOptions, timeoutCts.Token).ConfigureAwait(false);
+            var payload = await response.Content.ReadFromJsonAsync(
+                CompanionJsonSerializerContext.Default.CompanionWorkspacesResponseDto,
+                timeoutCts.Token).ConfigureAwait(false);
             return payload?.Workspaces ?? [];
         }
         catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException or JsonException or InvalidOperationException)
@@ -102,7 +104,9 @@ public sealed class NightCodeForgeCompanionClient : INightCodeForgeClient
         try
         {
             using var request = CreateRequest(HttpMethod.Post, $"/api/companion/workspaces/{workspaceId}/ideation");
-            request.Content = JsonContent.Create(requestBody, options: JsonOptions);
+            request.Content = JsonContent.Create(
+                requestBody,
+                CompanionJsonSerializerContext.Default.CreateCompanionIdeationRequestDto);
 
             using var timeoutCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
             timeoutCts.CancelAfter(TimeSpan.FromSeconds(15));
@@ -116,7 +120,9 @@ public sealed class NightCodeForgeCompanionClient : INightCodeForgeClient
             }
 
             IsConnected = true;
-            return await response.Content.ReadFromJsonAsync<CreateCompanionIdeationResponseDto>(JsonOptions, timeoutCts.Token).ConfigureAwait(false);
+            return await response.Content.ReadFromJsonAsync(
+                CompanionJsonSerializerContext.Default.CreateCompanionIdeationResponseDto,
+                timeoutCts.Token).ConfigureAwait(false);
         }
         catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException or JsonException or InvalidOperationException)
         {

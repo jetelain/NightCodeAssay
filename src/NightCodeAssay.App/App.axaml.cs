@@ -1,3 +1,4 @@
+using System.Globalization;
 using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Controls.ApplicationLifetimes;
@@ -304,7 +305,7 @@ public partial class App : Application
             builder.SetMinimumLevel(LogLevel.Information);
         });
 
-        services.Configure<AssayOptions>(configuration);
+        services.Configure<AssayOptions>(options => BindAssayOptions(configuration, options));
         services.AddSingleton<IKeyProtector>(_ =>
             OperatingSystem.IsWindows() ? new DpapiKeyProtector() : new PlainKeyProtector());
         services.AddSingleton<IDefaultKeyReader, DefaultKeyReader>();
@@ -327,6 +328,68 @@ public partial class App : Application
             ValidateOnBuild = true,
             ValidateScopes = true
         });
+    }
+
+    private static void BindAssayOptions(IConfiguration configuration, AssayOptions options)
+    {
+        options.NightCodeForgeUrl = configuration[nameof(AssayOptions.NightCodeForgeUrl)] ?? options.NightCodeForgeUrl;
+
+        var nightCodeForgeSection = configuration.GetSection(nameof(AssayOptions.NightCodeForge));
+        if (nightCodeForgeSection.Exists())
+        {
+            options.NightCodeForge.Url = nightCodeForgeSection[nameof(NightCodeForgeConnectionOptions.Url)] ?? options.NightCodeForge.Url;
+            options.NightCodeForge.ApiKey = nightCodeForgeSection[nameof(NightCodeForgeConnectionOptions.ApiKey)] ?? options.NightCodeForge.ApiKey;
+            options.NightCodeForge.ConfigDirectory = nightCodeForgeSection[nameof(NightCodeForgeConnectionOptions.ConfigDirectory)] ?? options.NightCodeForge.ConfigDirectory;
+        }
+
+        options.Hotkey = configuration[nameof(AssayOptions.Hotkey)] ?? options.Hotkey;
+
+        if (bool.TryParse(configuration[nameof(AssayOptions.CaptureActiveWindowOnly)], out var captureActiveWindowOnly))
+        {
+            options.CaptureActiveWindowOnly = captureActiveWindowOnly;
+        }
+
+        if (int.TryParse(configuration[nameof(AssayOptions.CdpPort)], NumberStyles.Integer, CultureInfo.InvariantCulture, out var cdpPort))
+        {
+            options.CdpPort = cdpPort;
+        }
+
+        options.SessionsDirectory = configuration[nameof(AssayOptions.SessionsDirectory)] ?? options.SessionsDirectory;
+
+        var logPathsSection = configuration.GetSection(nameof(AssayOptions.LogFilePaths));
+        if (logPathsSection.Exists())
+        {
+            var paths = new List<string>();
+            foreach (var child in logPathsSection.GetChildren())
+            {
+                if (!string.IsNullOrWhiteSpace(child.Value))
+                {
+                    paths.Add(child.Value);
+                }
+            }
+
+            options.LogFilePaths = paths;
+        }
+
+        options.ProviderTypeOverride = configuration[nameof(AssayOptions.ProviderTypeOverride)] ?? options.ProviderTypeOverride;
+        options.EndpointOverride = configuration[nameof(AssayOptions.EndpointOverride)] ?? options.EndpointOverride;
+        options.VisionModelIdOverride = configuration[nameof(AssayOptions.VisionModelIdOverride)] ?? options.VisionModelIdOverride;
+        options.OpenAiApiKeyOverride = configuration[nameof(AssayOptions.OpenAiApiKeyOverride)] ?? options.OpenAiApiKeyOverride;
+
+        if (int.TryParse(configuration[nameof(AssayOptions.VlmTimeoutSeconds)], NumberStyles.Integer, CultureInfo.InvariantCulture, out var vlmTimeoutSeconds))
+        {
+            options.VlmTimeoutSeconds = vlmTimeoutSeconds;
+        }
+
+        if (int.TryParse(configuration[nameof(AssayOptions.VlmMaxRetries)], NumberStyles.Integer, CultureInfo.InvariantCulture, out var vlmMaxRetries))
+        {
+            options.VlmMaxRetries = vlmMaxRetries;
+        }
+
+        if (int.TryParse(configuration[nameof(AssayOptions.VlmRetryBaseDelayMs)], NumberStyles.Integer, CultureInfo.InvariantCulture, out var vlmRetryBaseDelayMs))
+        {
+            options.VlmRetryBaseDelayMs = vlmRetryBaseDelayMs;
+        }
     }
 
     private static WindowIcon CreateAppWindowIcon()
