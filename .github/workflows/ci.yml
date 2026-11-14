@@ -63,7 +63,7 @@ jobs:
           Compress-Archive -Path ./dist/NightCodeAssay-win-x64/* -DestinationPath ./artifacts/portable/NightCodeAssay-win-x64.zip -Force
 
       - name: Upload NuGet tool artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: nuget-package
           path: ./artifacts/nuget/*.nupkg
@@ -71,7 +71,7 @@ jobs:
           if-no-files-found: error
 
       - name: Upload portable executable artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: NightCodeAssay-win-x64
           path: ./artifacts/portable/NightCodeAssay-win-x64.zip
