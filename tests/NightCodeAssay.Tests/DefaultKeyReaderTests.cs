@@ -125,6 +125,7 @@ public sealed class DefaultKeyReaderTests : IDisposable
         Assert.NotNull(provider.GetRequiredService<IReportWriter>());
         Assert.NotNull(provider.GetRequiredService<IContextCollector>());
         Assert.NotNull(provider.GetRequiredService<IGlobalHotkeyService>());
+        Assert.NotNull(provider.GetRequiredService<IBrowserLauncherService>());
         Assert.NotNull(provider.GetRequiredService<IScreenCaptureService>());
     }
 

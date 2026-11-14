@@ -4,6 +4,7 @@ using NightCodeAssay.Core.Configuration;
 using NightCodeAssay.Core.Interfaces;
 using NightCodeAssay.Core.Models;
 using NightCodeAssay.Core.Services;
+using NightCodeAssay.Infrastructure.Browser;
 using NightCodeAssay.Infrastructure.Capture;
 using NightCodeAssay.Infrastructure.Context;
 using NightCodeAssay.Infrastructure.Hotkey;
@@ -135,6 +136,212 @@ public sealed class CapturePipelineAndAnnotationTests : IDisposable
     }
 
     [Fact]
+    public void CdpContextCollector_ParsesFirefoxBiDiEventsAndContextTree()
+    {
+        using var httpClient = new HttpClient();
+        using var cdp = new CdpContextCollector(
+            Options.Create(new AssayOptions()),
+            httpClient,
+            NullLogger<CdpContextCollector>.Instance);
+
+        cdp.ProcessCdpMessage("""
+        {
+          "type": "success",
+          "id": 3,
+          "result": {
+            "contexts": [
+              { "context": "ctx-blank", "url": "about:blank", "children": [] },
+              { "context": "ctx-main", "url": "http://localhost:5000/dashboard", "children": [] }
+            ]
+          }
+        }
+        """);
+
+        Assert.Equal("http://localhost:5000/dashboard", cdp.GetActiveUrlSnapshot());
+
+        cdp.ProcessCdpMessage("""
+        {
+          "type": "event",
+          "method": "browsingContext.navigationCommitted",
+          "params": {
+            "context": "ctx-main",
+            "url": "http://localhost:5000/orders/42"
+          }
+        }
+        """);
+
+        Assert.Equal("http://localhost:5000/orders/42", cdp.GetActiveUrlSnapshot());
+
+        cdp.ProcessCdpMessage("""
+        {
+          "type": "event",
+          "method": "browsingContext.historyUpdated",
+          "params": {
+            "context": "ctx-main",
+            "url": "http://localhost:5000/orders/42/details"
+          }
+        }
+        """);
+
+        Assert.Equal("http://localhost:5000/orders/42/details", cdp.GetActiveUrlSnapshot());
+
+        cdp.ProcessCdpMessage("""
+        {
+          "type": "event",
+          "method": "browsingContext.fragmentNavigated",
+          "params": {
+            "context": "ctx-main",
+            "url": "http://localhost:5000/orders/42/details#timeline"
+          }
+        }
+        """);
+
+        Assert.Equal("http://localhost:5000/orders/42/details#timeline", cdp.GetActiveUrlSnapshot());
+
+        cdp.ProcessCdpMessage("""
+        {
+          "type": "success",
+          "id": 4,
+          "result": {
+            "contexts": [
+              { "context": "ctx-other", "url": "http://localhost:5000/other", "children": [] },
+              { "context": "ctx-main", "url": "http://localhost:5000/orders/42/redirected", "children": [] }
+            ]
+          }
+        }
+        """);
+
+        Assert.Equal("http://localhost:5000/orders/42/redirected", cdp.GetActiveUrlSnapshot());
+
+        cdp.ProcessCdpMessage("""
+        {
+          "type": "event",
+          "method": "log.entryAdded",
+          "params": {
+            "type": "console",
+            "level": "info",
+            "method": "log",
+            "text": "should be ignored"
+          }
+        }
+        """);
+
+        cdp.ProcessCdpMessage("""
+        {
+          "type": "event",
+          "method": "log.entryAdded",
+          "params": {
+            "type": "javascript",
+            "level": "error",
+            "text": "ReferenceError: orderTotal is not defined",
+            "stackTrace": {
+              "callFrames": [
+                { "url": "http://localhost:5000/orders.js", "lineNumber": 18 }
+              ]
+            }
+          }
+        }
+        """);
+
+        cdp.ProcessCdpMessage("""
+        {
+          "type": "event",
+          "method": "network.responseCompleted",
+          "params": {
+            "response": { "status": 200, "statusText": "OK", "url": "http://localhost:5000/ok" }
+          }
+        }
+        """);
+
+        cdp.ProcessCdpMessage("""
+        {
+          "type": "event",
+          "method": "network.responseCompleted",
+          "params": {
+            "response": { "status": 500, "statusText": "Internal Server Error", "url": "http://localhost:5000/api/orders" }
+          }
+        }
+        """);
+
+        cdp.ProcessCdpMessage("""
+        {
+          "type": "event",
+          "method": "network.fetchError",
+          "params": {
+            "request": { "url": "http://localhost:5000/api/timeout" },
+            "errorText": "NS_ERROR_CONNECTION_REFUSED"
+          }
+        }
+        """);
+
+        var errors = cdp.GetBufferedErrorsSnapshot();
+        Assert.Equal(3, errors.Count);
+        Assert.Contains("[BiDi Error] ReferenceError: orderTotal is not defined (http://localhost:5000/orders.js)", errors[0]);
+        Assert.Contains("[HTTP 500 Internal Server Error] http://localhost:5000/api/orders", errors[1]);
+        Assert.Contains("[Network Failed] NS_ERROR_CONNECTION_REFUSED (http://localhost:5000/api/timeout)", errors[2]);
+    }
+
+    [Fact]
+    public void BrowserLauncherService_BuildsCommandLineAndFirefoxProfilePreferences()
+    {
+        var profilesRoot = Path.Combine(_tempRoot, "browser-profiles");
+        var started = new List<System.Diagnostics.ProcessStartInfo>();
+
+        var launcher = new BrowserLauncherService(
+            NullLogger<BrowserLauncherService>.Instance,
+            profilesRoot,
+            executableResolver: kind => kind switch
+            {
+                DebugBrowserKind.Edge => @"C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe",
+                DebugBrowserKind.Chrome => @"C:\Program Files\Google\Chrome\Application\chrome.exe",
+                DebugBrowserKind.Firefox => @"C:\Program Files\Mozilla Firefox\firefox.exe",
+                _ => null
+            },
+            processStarter: psi =>
+            {
+                started.Add(psi);
+                return true;
+            });
+
+        var edgeResult = launcher.LaunchWithDebugPort(DebugBrowserKind.Edge, 9222);
+        Assert.True(edgeResult.Succeeded);
+        Assert.Contains("--remote-debugging-port=9222", edgeResult.Arguments);
+        Assert.Contains("--remote-allow-origins=*", edgeResult.Arguments);
+        Assert.Contains(Path.Combine(profilesRoot, "edge"), edgeResult.Arguments);
+
+        var chromeResult = launcher.LaunchWithDebugPort(DebugBrowserKind.Chrome, 9333);
+        Assert.True(chromeResult.Succeeded);
+        Assert.Contains("--remote-debugging-port=9333", chromeResult.Arguments);
+        Assert.Contains(Path.Combine(profilesRoot, "chrome"), chromeResult.Arguments);
+
+        var firefoxResult = launcher.LaunchWithDebugPort(DebugBrowserKind.Firefox, 9222);
+        Assert.True(firefoxResult.Succeeded);
+        Assert.Contains("--no-remote", firefoxResult.Arguments);
+        Assert.Contains("--remote-debugging-port 9222", firefoxResult.Arguments);
+        Assert.Contains(Path.Combine(profilesRoot, "firefox"), firefoxResult.Arguments);
+
+        var userJsPath = Path.Combine(profilesRoot, "firefox", "user.js");
+        Assert.True(File.Exists(userJsPath));
+        var userJsContent = File.ReadAllText(userJsPath);
+        Assert.Contains("devtools.debugger.remote-enabled", userJsContent);
+        Assert.Contains("devtools.chrome.enabled", userJsContent);
+        Assert.Contains("devtools.debugger.prompt-connection", userJsContent);
+        Assert.Contains("remote.active-protocols", userJsContent);
+
+        Assert.Equal(3, started.Count);
+
+        var missingLauncher = new BrowserLauncherService(
+            NullLogger<BrowserLauncherService>.Instance,
+            profilesRoot,
+            executableResolver: _ => null,
+            processStarter: _ => true);
+
+        var missingResult = missingLauncher.LaunchWithDebugPort(DebugBrowserKind.Firefox, 9222);
+        Assert.False(missingResult.Succeeded);
+        Assert.Contains("not found", missingResult.Message, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
     public async Task CapturePipeline_StandaloneSessionEndToEndWritesReportAndScreenshots()
     {
         var sessionsRoot = Path.Combine(_tempRoot, "sessions");
@@ -209,6 +416,9 @@ public sealed class CapturePipelineAndAnnotationTests : IDisposable
 
         public Task<TechnicalContext> CollectAsync(string? repositoryPath, CancellationToken cancellationToken = default) =>
             Task.FromResult(TechnicalContext.Empty());
+
+        public Task<bool> ProbeCdpConnectionAsync(CancellationToken cancellationToken = default) =>
+            Task.FromResult(false);
     }
 
     private sealed class StubVisionAnalyzer : IVisionAnalyzer

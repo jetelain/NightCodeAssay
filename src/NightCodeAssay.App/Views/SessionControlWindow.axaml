@@ -118,11 +118,38 @@
                 CornerRadius="8"
                 BorderBrush="{DynamicResource SemiColorBorder}"
                 BorderThickness="1">
-          <StackPanel Spacing="6">
+          <StackPanel Spacing="8">
             <TextBlock Text="Diagnostics" FontWeight="SemiBold" FontSize="13" />
             <TextBlock Text="{Binding VlmStatusText}" FontSize="12" TextWrapping="Wrap" />
             <TextBlock Text="{Binding CdpStatusText}" FontSize="12" Foreground="{DynamicResource SemiColorText2}" />
             <TextBlock Text="{Binding HotkeyStatusText}" FontSize="12" Foreground="{DynamicResource SemiColorText2}" />
+
+            <StackPanel Spacing="6" Margin="0,4,0,0">
+              <TextBlock Text="{Binding BrowserLaunchHeader}"
+                         FontSize="12"
+                         FontWeight="SemiBold"
+                         Foreground="{DynamicResource SemiColorText1}" />
+              <Grid ColumnDefinitions="*,*,*" ColumnSpacing="8">
+                <Button Grid.Column="0"
+                        Content="Start Edge"
+                        HorizontalAlignment="Stretch"
+                        HorizontalContentAlignment="Center"
+                        Command="{Binding LaunchEdgeDebugCommand}"
+                        ToolTip.Tip="Launch Microsoft Edge with CDP debugging enabled using an isolated Assay profile." />
+                <Button Grid.Column="1"
+                        Content="Start Chrome"
+                        HorizontalAlignment="Stretch"
+                        HorizontalContentAlignment="Center"
+                        Command="{Binding LaunchChromeDebugCommand}"
+                        ToolTip.Tip="Launch Google Chrome with CDP debugging enabled using an isolated Assay profile." />
+                <Button Grid.Column="2"
+                        Content="Start Firefox"
+                        HorizontalAlignment="Stretch"
+                        HorizontalContentAlignment="Center"
+                        Command="{Binding LaunchFirefoxDebugCommand}"
+                        ToolTip.Tip="Launch Mozilla Firefox with WebDriver BiDi debugging enabled using an isolated Assay profile." />
+              </Grid>
+            </StackPanel>
           </StackPanel>
         </Border>
 

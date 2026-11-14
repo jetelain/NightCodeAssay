@@ -20,7 +20,7 @@ During manual exploratory testing of Web or Desktop applications, NightCode Assa
   - Non-blocking `Channel<CaptureEntry>` pipeline saves PNGs, runs VLM visual analysis (with automatic retries and a 300s default per-attempt timeout), and appends entries to `report.md` in the background.
 - **Hybrid Technical Context Collection (`IContextCollector`):**
   - **Windows Desktop (Win32):** Foreground window title, process name, executable path, window bounds, and recent `Application` Event Log errors/warnings (last 30 seconds).
-  - **Web / Browser (CDP):** Connects via `ClientWebSocket` to `http://localhost:9222/json`, keeping a 50-event ring buffer of console errors, uncaught exceptions, and failed HTTP requests (`status >= 400`).
+  - **Web / Browser (CDP & Firefox WebDriver BiDi):** Connects via `ClientWebSocket` either to Chromium CDP (`http://localhost:9222/json` for Edge / Chrome) or to Firefox WebDriver BiDi (`ws://127.0.0.1:9222/session`), keeping a 50-event ring buffer of console errors, uncaught exceptions, failed network requests, and HTTP errors (`status >= 400`). Includes 1-click **Start Edge**, **Start Chrome**, and **Start Firefox** debug-port launchers in the Diagnostics card and System Tray menu.
   - **Local Log Tailer:** Reads configured `LogFilePaths` globs and workspace `<RepositoryPath>/**/logs/*.log` files with `FileShare.ReadWrite`, extracting lines from the last 20 seconds.
 - **Graceful VLM Degradation:** Supports `Ollama`, `OllamaRouter` (via standard `OllamaApiClient` without router headers), and `OpenAiCompatible` endpoints. If no VLM is running or a request times out, `[VLM analysis unavailable]` is recorded without ever losing the screenshot, note, or technical context.
 
@@ -92,19 +92,24 @@ dotnet run --project src/NightCodeAssay.App
 
 ---
 
-## Capturing Web Console & Network Errors (CDP)
+## Capturing Web Console & Network Errors (Edge, Chrome, and Firefox)
 
-To let NightCode Assay read the active tab URL, uncaught JavaScript exceptions, `console.error` output, and failed HTTP requests (`>= 400`), launch your Chromium browser with remote debugging enabled on port `9222`:
+To let NightCode Assay read the active tab URL, uncaught JavaScript exceptions, `console.error` output, and failed HTTP requests (`>= 400`), use the **Start Edge**, **Start Chrome**, or **Start Firefox** buttons in the Session Control window (or System Tray menu). Each button launches the browser with remote debugging enabled on `CdpPort` (default `9222`) using an isolated profile directory (`%LOCALAPPDATA%\NightCodeAssay\browser-profiles\`) so debugging still works alongside your regular browser windows.
+
+You can also launch a browser manually from a terminal:
 
 ```powershell
-# Google Chrome
-chrome.exe --remote-debugging-port=9222 --user-data-dir="%TEMP%\assay-chrome-profile"
+# Google Chrome (CDP)
+chrome.exe --remote-debugging-port=9222 --remote-allow-origins=* --user-data-dir="%LOCALAPPDATA%\NightCodeAssay\browser-profiles\chrome"
 
-# Microsoft Edge
-msedge.exe --remote-debugging-port=9222 --user-data-dir="%TEMP%\assay-edge-profile"
+# Microsoft Edge (CDP)
+msedge.exe --remote-debugging-port=9222 --remote-allow-origins=* --user-data-dir="%LOCALAPPDATA%\NightCodeAssay\browser-profiles\edge"
+
+# Mozilla Firefox (WebDriver BiDi)
+firefox.exe --no-remote --profile "%LOCALAPPDATA%\NightCodeAssay\browser-profiles\firefox" --remote-debugging-port 9222
 ```
 
-When an exploratory session starts, Assay automatically connects to `http://localhost:9222/json` and maintains a rolling buffer of the last 50 browser errors.
+When an exploratory session starts (or when you click **Refresh**), Assay automatically connects via Chromium CDP (`http://localhost:9222/json`) or Firefox WebDriver BiDi (`ws://127.0.0.1:9222/session`) and maintains a rolling buffer of the last 50 browser errors.
 
 ---
 

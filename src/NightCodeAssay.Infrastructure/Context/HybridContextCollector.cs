@@ -25,6 +25,9 @@ public sealed class HybridContextCollector : IContextCollector
 
     public bool IsCdpConnected => _cdpCollector.IsCdpConnected;
 
+    public Task<bool> ProbeCdpConnectionAsync(CancellationToken cancellationToken = default) =>
+        _cdpCollector.ProbeConnectionAsync(cancellationToken);
+
     public async Task StartSessionAsync(string? repositoryPath, CancellationToken cancellationToken = default)
     {
         _logTailer.ResetSessionTracking(repositoryPath);
@@ -41,15 +44,16 @@ public sealed class HybridContextCollector : IContextCollector
         var now = DateTimeOffset.Now;
 
         var desktopTask = Task.Run(() => _desktopCollector.Collect(now), cancellationToken);
-        var cdpTask = _cdpCollector.CollectAsync(cancellationToken);
         var logsTask = Task.Run(() => _logTailer.CollectRecentLines(repositoryPath, now), cancellationToken);
 
-        await Task.WhenAll(desktopTask, cdpTask, logsTask).ConfigureAwait(false);
+        var desktop = await desktopTask.ConfigureAwait(false);
+        var web = await _cdpCollector.CollectAsync(desktop, cancellationToken).ConfigureAwait(false);
+        var logs = await logsTask.ConfigureAwait(false);
 
         return new TechnicalContext(
-            Desktop: await desktopTask.ConfigureAwait(false),
-            Web: await cdpTask.ConfigureAwait(false),
-            LocalLogLines: await logsTask.ConfigureAwait(false),
+            Desktop: desktop,
+            Web: web,
+            LocalLogLines: logs,
             CapturedAt: now);
     }
 }

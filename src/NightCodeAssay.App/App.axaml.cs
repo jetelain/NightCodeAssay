@@ -15,6 +15,7 @@ using NightCodeAssay.Core.Interfaces;
 using NightCodeAssay.Core.Models;
 using NightCodeAssay.Core.Security;
 using NightCodeAssay.Core.Services;
+using NightCodeAssay.Infrastructure.Browser;
 using NightCodeAssay.Infrastructure.Capture;
 using NightCodeAssay.Infrastructure.Companion;
 using NightCodeAssay.Infrastructure.Context;
@@ -61,6 +62,7 @@ public partial class App : Application
         var visionAnalyzer = sp.GetRequiredService<IVisionAnalyzer>();
         var reportWriter = sp.GetRequiredService<IReportWriter>();
         var contextCollector = sp.GetRequiredService<IContextCollector>();
+        var browserLauncher = sp.GetRequiredService<IBrowserLauncherService>();
         var hotkeyService = sp.GetRequiredService<IGlobalHotkeyService>();
 
         var appIcon = CreateAppWindowIcon();
@@ -72,6 +74,7 @@ public partial class App : Application
             visionAnalyzer,
             reportWriter,
             contextCollector,
+            browserLauncher,
             hotkeyService,
             triggerCaptureAsync: () => TriggerQuickCaptureAsync(hideControlWindowTemporarily: true),
             copyToClipboardAsync: CopyTextToClipboardAsync,
@@ -96,6 +99,7 @@ public partial class App : Application
         desktop.MainWindow = _controlWindow;
         _controlWindow.Show();
 
+        _ = contextCollector.StartSessionAsync(null);
         _ = _controlViewModel.RefreshCompanionAsync();
     }
 
@@ -113,6 +117,15 @@ public partial class App : Application
         var copyReportItem = new NativeMenuItem("Copy Report to Clipboard");
         copyReportItem.Click += (_, _) => _ = _controlViewModel?.CopyReportToClipboardCommand.ExecuteAsync(null);
 
+        var startEdgeItem = new NativeMenuItem("Start Edge (Debug Port)");
+        startEdgeItem.Click += (_, _) => _ = _controlViewModel?.LaunchEdgeDebugCommand.ExecuteAsync(null);
+
+        var startChromeItem = new NativeMenuItem("Start Chrome (Debug Port)");
+        startChromeItem.Click += (_, _) => _ = _controlViewModel?.LaunchChromeDebugCommand.ExecuteAsync(null);
+
+        var startFirefoxItem = new NativeMenuItem("Start Firefox (Debug Port)");
+        startFirefoxItem.Click += (_, _) => _ = _controlViewModel?.LaunchFirefoxDebugCommand.ExecuteAsync(null);
+
         var exitItem = new NativeMenuItem("Exit NightCode Assay");
         exitItem.Click += (_, _) => ShutdownApplication();
 
@@ -121,6 +134,10 @@ public partial class App : Application
         menu.Items.Add(captureItem);
         menu.Items.Add(toggleSessionItem);
         menu.Items.Add(copyReportItem);
+        menu.Items.Add(new NativeMenuItemSeparator());
+        menu.Items.Add(startEdgeItem);
+        menu.Items.Add(startChromeItem);
+        menu.Items.Add(startFirefoxItem);
         menu.Items.Add(new NativeMenuItemSeparator());
         menu.Items.Add(exitItem);
 
@@ -294,6 +311,7 @@ public partial class App : Application
 
         services.AddSingleton<IScreenCaptureService, Win32ScreenCaptureService>();
         services.AddSingleton<IGlobalHotkeyService, GlobalHotkeyService>();
+        services.AddSingleton<IBrowserLauncherService, BrowserLauncherService>();
         services.AddSingleton<WindowsDesktopContextCollector>();
         services.AddSingleton<WorkspaceLogTailer>();
         services.AddHttpClient<CdpContextCollector>();

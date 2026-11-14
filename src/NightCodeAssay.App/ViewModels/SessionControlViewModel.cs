@@ -18,6 +18,7 @@ public sealed partial class SessionControlViewModel : ObservableObject
     private readonly IVisionAnalyzer _visionAnalyzer;
     private readonly IReportWriter _reportWriter;
     private readonly IContextCollector _contextCollector;
+    private readonly IBrowserLauncherService _browserLauncher;
     private readonly IGlobalHotkeyService _hotkeyService;
     private readonly Func<Task> _triggerCaptureAsync;
     private readonly Func<string, Task> _copyToClipboardAsync;
@@ -42,7 +43,7 @@ public sealed partial class SessionControlViewModel : ObservableObject
     private string _vlmStatusText = "VLM: Checking...";
 
     [ObservableProperty]
-    private string _cdpStatusText = "CDP (9222): Idle";
+    private string _cdpStatusText = "Browser Debug (9222): Waiting / Optional";
 
     [ObservableProperty]
     private string _hotkeyStatusText = "Hotkey: Pending";
@@ -75,6 +76,7 @@ public sealed partial class SessionControlViewModel : ObservableObject
         IVisionAnalyzer visionAnalyzer,
         IReportWriter reportWriter,
         IContextCollector contextCollector,
+        IBrowserLauncherService browserLauncher,
         IGlobalHotkeyService hotkeyService,
         Func<Task> triggerCaptureAsync,
         Func<string, Task> copyToClipboardAsync,
@@ -86,6 +88,7 @@ public sealed partial class SessionControlViewModel : ObservableObject
         _visionAnalyzer = visionAnalyzer ?? throw new ArgumentNullException(nameof(visionAnalyzer));
         _reportWriter = reportWriter ?? throw new ArgumentNullException(nameof(reportWriter));
         _contextCollector = contextCollector ?? throw new ArgumentNullException(nameof(contextCollector));
+        _browserLauncher = browserLauncher ?? throw new ArgumentNullException(nameof(browserLauncher));
         _hotkeyService = hotkeyService ?? throw new ArgumentNullException(nameof(hotkeyService));
         _triggerCaptureAsync = triggerCaptureAsync ?? throw new ArgumentNullException(nameof(triggerCaptureAsync));
         _copyToClipboardAsync = copyToClipboardAsync ?? throw new ArgumentNullException(nameof(copyToClipboardAsync));
@@ -106,6 +109,8 @@ public sealed partial class SessionControlViewModel : ObservableObject
     public string SessionButtonLabel => IsSessionActive ? "Stop Session" : "Start Session";
 
     public string QuickCaptureButtonLabel => $"Quick Capture ({_options.Value.Hotkey})";
+
+    public string BrowserLaunchHeader => $"Start Browser with Debug Port ({_options.Value.CdpPort})";
 
     public bool HasReportAvailable => (_pipeline.ActiveSession ?? _lastSession) is not null;
 
@@ -184,8 +189,37 @@ public sealed partial class SessionControlViewModel : ObservableObject
     {
         var port = _options.Value.CdpPort;
         CdpStatusText = _contextCollector.IsCdpConnected
-            ? $"CDP ({port}): Connected"
-            : $"CDP ({port}): Waiting / Optional";
+            ? $"Browser Debug ({port}): Connected (CDP / BiDi)"
+            : $"Browser Debug ({port}): Waiting / Optional";
+    }
+
+    [RelayCommand]
+    private Task LaunchEdgeDebugAsync() => LaunchBrowserWithDebugPortAsync(DebugBrowserKind.Edge);
+
+    [RelayCommand]
+    private Task LaunchChromeDebugAsync() => LaunchBrowserWithDebugPortAsync(DebugBrowserKind.Chrome);
+
+    [RelayCommand]
+    private Task LaunchFirefoxDebugAsync() => LaunchBrowserWithDebugPortAsync(DebugBrowserKind.Firefox);
+
+    private async Task LaunchBrowserWithDebugPortAsync(DebugBrowserKind kind)
+    {
+        var result = _browserLauncher.LaunchWithDebugPort(kind, _options.Value.CdpPort);
+        StatusMessage = result.Message;
+        if (!result.Succeeded)
+        {
+            return;
+        }
+
+        await Task.Delay(1500);
+        var connected = await _contextCollector.ProbeCdpConnectionAsync();
+        if (!connected)
+        {
+            await Task.Delay(1500);
+            await _contextCollector.ProbeCdpConnectionAsync();
+        }
+
+        UpdateCdpDisplay();
     }
 
     [RelayCommand]
@@ -228,6 +262,7 @@ public sealed partial class SessionControlViewModel : ObservableObject
                 ? $"VLM Ready: {resolved.ProviderType} ({resolved.ModelId})"
                 : $"VLM Offline ({resolved.Endpoint} / {resolved.ModelId})";
 
+            await _contextCollector.ProbeCdpConnectionAsync();
             UpdateCdpDisplay();
             RefreshHotkeyDisplay();
         }

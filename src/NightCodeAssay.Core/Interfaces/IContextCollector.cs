@@ -11,4 +11,6 @@ public interface IContextCollector
     Task StopSessionAsync(CancellationToken cancellationToken = default);
 
     Task<TechnicalContext> CollectAsync(string? repositoryPath, CancellationToken cancellationToken = default);
+
+    Task<bool> ProbeCdpConnectionAsync(CancellationToken cancellationToken = default);
 }
