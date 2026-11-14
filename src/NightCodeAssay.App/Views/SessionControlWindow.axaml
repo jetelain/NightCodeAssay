@@ -1,0 +1,184 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:vm="using:NightCodeAssay.App.ViewModels"
+        x:Class="NightCodeAssay.App.Views.SessionControlWindow"
+        x:DataType="vm:SessionControlViewModel"
+        Title="NightCode Assay — Exploratory Testing Companion"
+        Width="600"
+        Height="800"
+        MinWidth="460"
+        MinHeight="560"
+        WindowStartupLocation="CenterScreen">
+
+  <Grid RowDefinitions="Auto,*,Auto" Margin="18" RowSpacing="14">
+
+    <!-- Header -->
+    <Border Grid.Row="0"
+            Padding="14"
+            CornerRadius="8"
+            BorderBrush="{DynamicResource SemiColorBorder}"
+            BorderThickness="1">
+      <Grid ColumnDefinitions="*,Auto" RowDefinitions="Auto,Auto" RowSpacing="6">
+        <StackPanel Grid.Row="0" Grid.Column="0" Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
+          <TextBlock Text="NightCode Assay" FontSize="18" FontWeight="Bold" />
+          <Border Theme="{DynamicResource TagBorder}" Padding="8,2" CornerRadius="10">
+            <TextBlock Text="{Binding CompanionStatusText}" FontSize="11" FontWeight="SemiBold" />
+          </Border>
+        </StackPanel>
+
+        <Button Grid.Row="0" Grid.Column="1"
+                Content="Refresh"
+                Command="{Binding RefreshCompanionCommand}"
+                IsEnabled="{Binding !IsBusy}" />
+
+        <TextBlock Grid.Row="1" Grid.Column="0" Grid.ColumnSpan="2"
+                   Text="Zero-VRAM exploratory testing companion (Software Rendering)"
+                   Foreground="{DynamicResource SemiColorText2}"
+                   FontSize="12" />
+      </Grid>
+    </Border>
+
+    <!-- Main Body -->
+    <ScrollViewer Grid.Row="1">
+      <StackPanel Spacing="14">
+
+        <!-- Target Workspace -->
+        <Border Padding="14"
+                CornerRadius="8"
+                BorderBrush="{DynamicResource SemiColorBorder}"
+                BorderThickness="1">
+          <StackPanel Spacing="8">
+            <TextBlock Text="Target Workspace" FontWeight="SemiBold" FontSize="13" />
+            <ComboBox ItemsSource="{Binding Workspaces}"
+                      SelectedItem="{Binding SelectedWorkspace}"
+                      HorizontalAlignment="Stretch"
+                      IsEnabled="{Binding !IsSessionActive}">
+              <ComboBox.ItemTemplate>
+                <DataTemplate x:DataType="vm:WorkspaceItemViewModel">
+                  <StackPanel Spacing="2">
+                    <TextBlock Text="{Binding DisplayName}" FontWeight="SemiBold" />
+                    <TextBlock Text="{Binding Subtitle}" FontSize="11" Foreground="{DynamicResource SemiColorText2}" />
+                  </StackPanel>
+                </DataTemplate>
+              </ComboBox.ItemTemplate>
+            </ComboBox>
+            <CheckBox Content="Capture active foreground window only (unchecked = full desktop)"
+                      IsChecked="{Binding CaptureActiveWindowOnly}"
+                      FontSize="12" />
+          </StackPanel>
+        </Border>
+
+        <!-- Session Controls & Live Counters -->
+        <Border Padding="14"
+                CornerRadius="8"
+                BorderBrush="{DynamicResource SemiColorBorder}"
+                BorderThickness="1">
+          <StackPanel Spacing="12">
+            <Grid ColumnDefinitions="*,Auto">
+              <StackPanel Grid.Column="0" Spacing="2">
+                <TextBlock Text="Exploratory Session" FontWeight="SemiBold" FontSize="13" />
+                <TextBlock Text="{Binding ActiveSessionLabel}" FontSize="12" Foreground="{DynamicResource SemiColorText2}" />
+              </StackPanel>
+              <Button Grid.Column="1"
+                      Content="{Binding SessionButtonLabel}"
+                      Classes="Primary"
+                      Command="{Binding ToggleSessionCommand}" />
+            </Grid>
+
+            <Grid ColumnDefinitions="*,*,*" ColumnSpacing="10">
+              <Border Grid.Column="0" Padding="10" CornerRadius="6" BorderBrush="{DynamicResource SemiColorBorder}" BorderThickness="1">
+                <StackPanel HorizontalAlignment="Center">
+                  <TextBlock Text="{Binding CapturedCount}" FontSize="22" FontWeight="Bold" HorizontalAlignment="Center" />
+                  <TextBlock Text="Captured" FontSize="11" Foreground="{DynamicResource SemiColorText2}" HorizontalAlignment="Center" />
+                </StackPanel>
+              </Border>
+              <Border Grid.Column="1" Padding="10" CornerRadius="6" BorderBrush="{DynamicResource SemiColorBorder}" BorderThickness="1">
+                <StackPanel HorizontalAlignment="Center">
+                  <TextBlock Text="{Binding PendingCount}" FontSize="22" FontWeight="Bold" HorizontalAlignment="Center" />
+                  <TextBlock Text="Processing" FontSize="11" Foreground="{DynamicResource SemiColorText2}" HorizontalAlignment="Center" />
+                </StackPanel>
+              </Border>
+              <Border Grid.Column="2" Padding="10" CornerRadius="6" BorderBrush="{DynamicResource SemiColorBorder}" BorderThickness="1">
+                <StackPanel HorizontalAlignment="Center">
+                  <TextBlock Text="{Binding SavedCount}" FontSize="22" FontWeight="Bold" HorizontalAlignment="Center" />
+                  <TextBlock Text="Saved" FontSize="11" Foreground="{DynamicResource SemiColorText2}" HorizontalAlignment="Center" />
+                </StackPanel>
+              </Border>
+            </Grid>
+
+            <Button Content="{Binding QuickCaptureButtonLabel}"
+                    HorizontalAlignment="Stretch"
+                    HorizontalContentAlignment="Center"
+                    Command="{Binding TriggerCaptureCommand}" />
+          </StackPanel>
+        </Border>
+
+        <!-- Connectivity Diagnostics -->
+        <Border Padding="14"
+                CornerRadius="8"
+                BorderBrush="{DynamicResource SemiColorBorder}"
+                BorderThickness="1">
+          <StackPanel Spacing="6">
+            <TextBlock Text="Diagnostics" FontWeight="SemiBold" FontSize="13" />
+            <TextBlock Text="{Binding VlmStatusText}" FontSize="12" TextWrapping="Wrap" />
+            <TextBlock Text="{Binding CdpStatusText}" FontSize="12" Foreground="{DynamicResource SemiColorText2}" />
+            <TextBlock Text="{Binding HotkeyStatusText}" FontSize="12" Foreground="{DynamicResource SemiColorText2}" />
+          </StackPanel>
+        </Border>
+
+        <!-- Export & Handoff -->
+        <Border Padding="14"
+                CornerRadius="8"
+                BorderBrush="{DynamicResource SemiColorBorder}"
+                BorderThickness="1">
+          <StackPanel Spacing="8">
+            <TextBlock Text="Report &amp; Handoff" FontWeight="SemiBold" FontSize="13" />
+            <Grid ColumnDefinitions="*,*" RowDefinitions="Auto,Auto" ColumnSpacing="8" RowSpacing="8">
+              <Button Grid.Row="0" Grid.Column="0"
+                      Content="Open Session Folder"
+                      HorizontalAlignment="Stretch"
+                      HorizontalContentAlignment="Center"
+                      Command="{Binding OpenSessionFolderCommand}"
+                      IsEnabled="{Binding HasReportAvailable}" />
+              <Button Grid.Row="0" Grid.Column="1"
+                      Content="Open report.md"
+                      HorizontalAlignment="Stretch"
+                      HorizontalContentAlignment="Center"
+                      Command="{Binding OpenReportFileCommand}"
+                      IsEnabled="{Binding HasReportAvailable}" />
+              <Button Grid.Row="1" Grid.Column="0"
+                      Content="Copy Report to Clipboard"
+                      HorizontalAlignment="Stretch"
+                      HorizontalContentAlignment="Center"
+                      Command="{Binding CopyReportToClipboardCommand}"
+                      IsEnabled="{Binding HasReportAvailable}" />
+              <Button Grid.Row="1" Grid.Column="1"
+                      Content="Send to Ideation"
+                      HorizontalAlignment="Stretch"
+                      HorizontalContentAlignment="Center"
+                      Command="{Binding SendToIdeationCommand}"
+                      IsEnabled="{Binding CanSendToIdeation}"
+                      ToolTip.Tip="Available when connected to NightCodeForge with a linked workspace." />
+            </Grid>
+          </StackPanel>
+        </Border>
+
+      </StackPanel>
+    </ScrollViewer>
+
+    <!-- Footer Status -->
+    <Grid Grid.Row="2" ColumnDefinitions="*,Auto" ColumnSpacing="10">
+      <TextBlock Grid.Column="0"
+                 Text="{Binding StatusMessage}"
+                 FontSize="12"
+                 Foreground="{DynamicResource SemiColorText2}"
+                 TextTrimming="CharacterEllipsis"
+                 VerticalAlignment="Center" />
+      <Button Grid.Column="1"
+              Content="Exit Assay"
+              Classes="Danger"
+              Command="{Binding ExitAppCommand}" />
+    </Grid>
+
+  </Grid>
+</Window>

@@ -1,0 +1,164 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:vm="using:NightCodeAssay.App.ViewModels"
+        x:Class="NightCodeAssay.App.Views.QuickCaptureWindow"
+        x:DataType="vm:QuickCaptureViewModel"
+        Title="Quick Capture"
+        Width="840"
+        Height="640"
+        CanResize="False"
+        Topmost="True"
+        WindowDecorations="None"
+        WindowStartupLocation="CenterScreen">
+
+  <Border Background="#151922"
+          BorderBrush="#3F9EFF"
+          BorderThickness="1.5"
+          CornerRadius="10"
+          Padding="16"
+          PointerPressed="OnWindowBorderPointerPressed">
+    <Grid RowDefinitions="Auto,*,Auto,Auto,Auto" RowSpacing="12">
+
+      <!-- Draggable Modal Header -->
+      <Grid x:Name="HeaderBar"
+            Grid.Row="0"
+            ColumnDefinitions="*,Auto"
+            ColumnSpacing="10"
+            Background="Transparent"
+            Cursor="SizeAll"
+            PointerPressed="OnHeaderPointerPressed">
+        <StackPanel Grid.Column="0" Spacing="2">
+          <StackPanel Orientation="Horizontal" Spacing="8">
+            <TextBlock Text="NightCode Assay — Quick Capture" FontSize="15" FontWeight="Bold" />
+            <TextBlock Text="(Drag here to move window)"
+                       FontSize="11"
+                       Foreground="{DynamicResource SemiColorText2}"
+                       VerticalAlignment="Center" />
+          </StackPanel>
+          <TextBlock Text="{Binding ContextSummary}"
+                     FontSize="11"
+                     Foreground="{DynamicResource SemiColorText2}"
+                     TextTrimming="CharacterEllipsis" />
+        </StackPanel>
+        <Button Grid.Column="1"
+                Content="Esc"
+                Cursor="Arrow"
+                Command="{Binding CancelCommand}" />
+      </Grid>
+
+      <!-- Zoomable & Pannable Screenshot Preview + Interactive Red Highlight Canvas -->
+      <Border x:Name="PreviewViewportBorder"
+              Grid.Row="1"
+              Background="#0B0E14"
+              BorderBrush="{DynamicResource SemiColorBorder}"
+              BorderThickness="1"
+              CornerRadius="6"
+              ClipToBounds="True"
+              SizeChanged="OnPreviewViewportSizeChanged">
+        <ScrollViewer x:Name="PreviewScrollViewer"
+                      HorizontalScrollBarVisibility="Auto"
+                      VerticalScrollBarVisibility="Auto">
+          <Viewbox x:Name="PreviewViewbox"
+                   Stretch="Uniform"
+                   HorizontalAlignment="Center"
+                   VerticalAlignment="Center">
+            <Grid Width="{Binding ImageWidth}" Height="{Binding ImageHeight}">
+              <Image Source="{Binding PreviewBitmap}" Stretch="Fill" />
+              <Canvas x:Name="AnnotationCanvas"
+                      Background="Transparent"
+                      Cursor="Cross"
+                      PointerPressed="OnAnnotationPointerPressed"
+                      PointerMoved="OnAnnotationPointerMoved"
+                      PointerReleased="OnAnnotationPointerReleased">
+                <Rectangle x:Name="HighlightBox"
+                           Stroke="#FF2E4D"
+                           StrokeThickness="{Binding HighlightStrokeThickness}"
+                           Fill="#24FF2E4D"
+                           IsVisible="False"
+                           IsHitTestVisible="False" />
+              </Canvas>
+            </Grid>
+          </Viewbox>
+        </ScrollViewer>
+      </Border>
+
+      <!-- Category Selector, Zoom Controls & Annotation Hint -->
+      <Grid Grid.Row="2" ColumnDefinitions="Auto,*,Auto" ColumnSpacing="10">
+        <StackPanel Grid.Column="0" Orientation="Horizontal" Spacing="6">
+          <ToggleButton Content="[Bug]"
+                        IsChecked="{Binding IsBugSelected, Mode=OneWay}"
+                        Command="{Binding SelectCategoryCommand}"
+                        CommandParameter="Bug" />
+          <ToggleButton Content="[UI/UX]"
+                        IsChecked="{Binding IsUiUxSelected, Mode=OneWay}"
+                        Command="{Binding SelectCategoryCommand}"
+                        CommandParameter="UiUx" />
+          <ToggleButton Content="[Enhancement]"
+                        IsChecked="{Binding IsEnhancementSelected, Mode=OneWay}"
+                        Command="{Binding SelectCategoryCommand}"
+                        CommandParameter="Enhancement" />
+          <ToggleButton Content="[Question]"
+                        IsChecked="{Binding IsQuestionSelected, Mode=OneWay}"
+                        Command="{Binding SelectCategoryCommand}"
+                        CommandParameter="Question" />
+        </StackPanel>
+
+        <TextBlock Grid.Column="1"
+                   Text="Left-drag: red highlight | Wheel: zoom | Right-drag: pan"
+                   FontSize="11"
+                   Foreground="{DynamicResource SemiColorText2}"
+                   HorizontalAlignment="Center"
+                   VerticalAlignment="Center"
+                   TextTrimming="CharacterEllipsis" />
+
+        <StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="4" VerticalAlignment="Center">
+          <Button Content="-"
+                  Width="28"
+                  HorizontalContentAlignment="Center"
+                  ToolTip.Tip="Zoom Out (Ctrl+-)"
+                  Command="{Binding ZoomOutCommand}" />
+          <Button Content="{Binding ZoomPercentageText}"
+                  MinWidth="54"
+                  HorizontalContentAlignment="Center"
+                  ToolTip.Tip="Reset Zoom to 100% (Ctrl+0)"
+                  Command="{Binding ResetZoomCommand}" />
+          <Button Content="+"
+                  Width="28"
+                  HorizontalContentAlignment="Center"
+                  ToolTip.Tip="Zoom In (Ctrl++)"
+                  Command="{Binding ZoomInCommand}" />
+          <Button Content="Clear Highlight"
+                  Margin="6,0,0,0"
+                  Command="{Binding ClearHighlightCommand}"
+                  IsEnabled="{Binding HasHighlight}" />
+        </StackPanel>
+      </Grid>
+
+      <!-- Observation Input -->
+      <TextBox Grid.Row="3"
+               x:Name="NoteTextBox"
+               Height="88"
+               AcceptsReturn="True"
+               TextWrapping="Wrap"
+               Text="{Binding UserNote, Mode=TwoWay}"
+               PlaceholderText="Describe what you observed... (Enter to submit, Shift+Enter for newline, Esc to cancel)" />
+
+      <!-- Action Buttons -->
+      <Grid Grid.Row="4" ColumnDefinitions="*,Auto,Auto" ColumnSpacing="8">
+        <TextBlock Grid.Column="0"
+                   Text="Submitting closes this modal immediately and queues VLM + report.md append in the background."
+                   FontSize="11"
+                   Foreground="{DynamicResource SemiColorText2}"
+                   VerticalAlignment="Center" />
+        <Button Grid.Column="1"
+                Content="Cancel (Esc)"
+                Command="{Binding CancelCommand}" />
+        <Button Grid.Column="2"
+                Content="Save Capture (Enter)"
+                Classes="Primary"
+                Command="{Binding SubmitCommand}" />
+      </Grid>
+
+    </Grid>
+  </Border>
+</Window>

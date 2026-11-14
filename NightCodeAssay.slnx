@@ -1,0 +1,15 @@
+<Solution>
+  <Folder Name="/Solution/">
+    <File Path="docs/PLAN.md" />
+    <File Path="LICENSE" />
+    <File Path="README.md" />
+  </Folder>
+  <Folder Name="/src/">
+    <Project Path="src/NightCodeAssay.Core/NightCodeAssay.Core.csproj" />
+    <Project Path="src/NightCodeAssay.Infrastructure/NightCodeAssay.Infrastructure.csproj" />
+    <Project Path="src/NightCodeAssay.App/NightCodeAssay.App.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/NightCodeAssay.Tests/NightCodeAssay.Tests.csproj" />
+  </Folder>
+</Solution>
