@@ -16,6 +16,9 @@ public sealed class WindowsDesktopContextCollector
 {
     private const int MaxEventLogEntriesToScan = 150;
     private const int MaxMatchedEventLogEntries = 15;
+    private const uint GwHwndNext = 2;
+    private const int MaxZOrderWalkHandles = 200;
+    private const uint DwmwaCloaked = 14;
     private static readonly TimeSpan EventLogLookback = TimeSpan.FromSeconds(30);
 
     private readonly ILogger<WindowsDesktopContextCollector> _logger;
@@ -32,7 +35,7 @@ public sealed class WindowsDesktopContextCollector
             return DesktopContext.Empty;
         }
 
-        var (processName, exePath, windowTitle, x, y, w, h) = GetForegroundWindowInfo();
+        var (pid, processName, exePath, windowTitle, x, y, w, h) = GetForegroundWindowInfo();
         var events = ReadRecentApplicationEventLogs(processName, now);
 
         return new DesktopContext(
@@ -43,28 +46,48 @@ public sealed class WindowsDesktopContextCollector
             WindowY: y,
             WindowWidth: w,
             WindowHeight: h,
-            EventLogEntries: events);
+            EventLogEntries: events,
+            ProcessId: pid);
     }
 
     [SupportedOSPlatform("windows")]
-    private (string ProcessName, string ExecutablePath, string WindowTitle, int X, int Y, int Width, int Height) GetForegroundWindowInfo()
+    private (int ProcessId, string ProcessName, string ExecutablePath, string WindowTitle, int X, int Y, int Width, int Height) GetForegroundWindowInfo()
     {
         try
         {
             var hwnd = GetForegroundWindow();
-            if (hwnd == nint.Zero)
+            uint pid = 0;
+            if (hwnd != nint.Zero)
             {
-                return ("unknown", string.Empty, string.Empty, 0, 0, 0, 0);
+                _ = GetWindowThreadProcessId(hwnd, out pid);
             }
 
-            var titleLength = GetWindowTextLength(hwnd);
-            var title = string.Empty;
-            if (titleLength > 0)
+            var needsFallback = hwnd == nint.Zero || pid == (uint)Environment.ProcessId;
+            if (!needsFallback && GetWindowTextLength(hwnd) == 0 && pid != 0)
             {
-                var buffer = new StringBuilder(titleLength + 1);
-                _ = GetWindowText(hwnd, buffer, buffer.Capacity);
-                title = buffer.ToString();
+                var fgProcessName = TryGetProcessName((int)pid);
+                if (TargetProcessInspector.IsSystemOrShellProcessName(fgProcessName))
+                {
+                    needsFallback = true;
+                }
             }
+
+            if (needsFallback)
+            {
+                var fallback = FindTopNonSelfVisibleWindow(hwnd);
+                if (fallback != nint.Zero)
+                {
+                    hwnd = fallback;
+                    _ = GetWindowThreadProcessId(hwnd, out pid);
+                }
+            }
+
+            if (hwnd == nint.Zero)
+            {
+                return (0, "unknown", string.Empty, string.Empty, 0, 0, 0, 0);
+            }
+
+            var title = ReadWindowTitle(hwnd);
 
             int x = 0, y = 0, width = 0, height = 0;
             if (GetWindowRect(hwnd, out var rect))
@@ -75,23 +98,27 @@ public sealed class WindowsDesktopContextCollector
                 height = Math.Max(0, rect.Bottom - rect.Top);
             }
 
-            _ = GetWindowThreadProcessId(hwnd, out var pid);
             var processName = "unknown";
             var exePath = string.Empty;
 
             if (pid != 0)
             {
+                exePath = TargetProcessInspector.TryGetProcessImagePath((int)pid) ?? string.Empty;
+
                 try
                 {
                     using var process = Process.GetProcessById((int)pid);
                     processName = process.ProcessName;
-                    try
+                    if (string.IsNullOrWhiteSpace(exePath))
                     {
-                        exePath = process.MainModule?.FileName ?? string.Empty;
-                    }
-                    catch
-                    {
-                        // Protected or elevated process; ProcessName is still captured.
+                        try
+                        {
+                            exePath = process.MainModule?.FileName ?? string.Empty;
+                        }
+                        catch
+                        {
+                            // Protected or elevated process; ProcessName is still captured.
+                        }
                     }
                 }
                 catch
@@ -100,13 +127,91 @@ public sealed class WindowsDesktopContextCollector
                 }
             }
 
-            return (processName, exePath, title, x, y, width, height);
+            return ((int)pid, processName, exePath, title, x, y, width, height);
         }
         catch (Exception ex)
         {
             _logger.LogDebug(ex, "Failed to inspect Win32 foreground window.");
-            return ("unknown", string.Empty, string.Empty, 0, 0, 0, 0);
+            return (0, "unknown", string.Empty, string.Empty, 0, 0, 0, 0);
         }
+    }
+
+    [SupportedOSPlatform("windows")]
+    private static nint FindTopNonSelfVisibleWindow(nint startHwnd)
+    {
+        var current = startHwnd == nint.Zero
+            ? GetTopWindow(nint.Zero)
+            : GetWindow(startHwnd, GwHwndNext);
+
+        for (var i = 0; i < MaxZOrderWalkHandles && current != nint.Zero; i++, current = GetWindow(current, GwHwndNext))
+        {
+            if (!IsWindowVisible(current) || IsIconic(current) || IsWindowCloaked(current))
+            {
+                continue;
+            }
+
+            var title = ReadWindowTitle(current);
+            if (string.IsNullOrWhiteSpace(title) ||
+                string.Equals(title, "Program Manager", StringComparison.OrdinalIgnoreCase))
+            {
+                continue;
+            }
+
+            _ = GetWindowThreadProcessId(current, out var pid);
+            if (pid == 0 || pid == (uint)Environment.ProcessId)
+            {
+                continue;
+            }
+
+            if (GetWindowRect(current, out var rect) &&
+                rect.Right - rect.Left > 0 &&
+                rect.Bottom - rect.Top > 0)
+            {
+                return current;
+            }
+        }
+
+        return nint.Zero;
+    }
+
+    [SupportedOSPlatform("windows")]
+    private static bool IsWindowCloaked(nint hwnd)
+    {
+        try
+        {
+            return DwmGetWindowAttribute(hwnd, DwmwaCloaked, out var cloaked, sizeof(int)) == 0 && cloaked != 0;
+        }
+        catch
+        {
+            return false;
+        }
+    }
+
+    private static string? TryGetProcessName(int pid)
+    {
+        try
+        {
+            using var process = Process.GetProcessById(pid);
+            return process.ProcessName;
+        }
+        catch
+        {
+            return null;
+        }
+    }
+
+    [SupportedOSPlatform("windows")]
+    private static string ReadWindowTitle(nint hwnd)
+    {
+        var titleLength = GetWindowTextLength(hwnd);
+        if (titleLength <= 0)
+        {
+            return string.Empty;
+        }
+
+        var buffer = new StringBuilder(titleLength + 1);
+        _ = GetWindowText(hwnd, buffer, buffer.Capacity);
+        return buffer.ToString();
     }
 
     [SupportedOSPlatform("windows")]
@@ -188,6 +293,27 @@ public sealed class WindowsDesktopContextCollector
 
     [DllImport("user32.dll")]
     private static extern nint GetForegroundWindow();
+
+    [DllImport("user32.dll")]
+    private static extern nint GetTopWindow(nint hWnd);
+
+    [DllImport("user32.dll")]
+    private static extern nint GetWindow(nint hWnd, uint uCmd);
+
+    [DllImport("user32.dll")]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static extern bool IsWindowVisible(nint hWnd);
+
+    [DllImport("user32.dll")]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static extern bool IsIconic(nint hWnd);
+
+    [DllImport("dwmapi.dll")]
+    private static extern int DwmGetWindowAttribute(
+        nint hwnd,
+        uint dwAttribute,
+        out int pvAttribute,
+        int cbAttribute);
 
     [DllImport("user32.dll", CharSet = CharSet.Unicode)]
     private static extern int GetWindowText(nint hWnd, StringBuilder lpString, int nMaxCount);

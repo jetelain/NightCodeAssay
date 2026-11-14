@@ -1,7 +1,10 @@
+using System.Collections.Concurrent;
 using System.Globalization;
+using System.Security.Cryptography;
 using System.Text;
 using NightCodeAssay.Core.Interfaces;
 using NightCodeAssay.Core.Models;
+using NightCodeAssay.Core.Security;
 
 namespace NightCodeAssay.Core.Services;
 
@@ -12,6 +15,8 @@ namespace NightCodeAssay.Core.Services;
 public sealed class ReportWriter : IReportWriter, IDisposable
 {
     private readonly SemaphoreSlim _writeLock = new(1, 1);
+    private readonly ConcurrentDictionary<string, ConcurrentDictionary<string, (int FirstCaptureIndex, string Fingerprint)>> _seenTargetConfigsBySession =
+        new(StringComparer.OrdinalIgnoreCase);
 
     public async Task InitializeSessionReportAsync(SessionMetadata metadata, CancellationToken cancellationToken = default)
     {
@@ -41,6 +46,8 @@ public sealed class ReportWriter : IReportWriter, IDisposable
         await _writeLock.WaitAsync(cancellationToken).ConfigureAwait(false);
         try
         {
+            _seenTargetConfigsBySession[metadata.SessionId] =
+                new ConcurrentDictionary<string, (int, string)>(StringComparer.OrdinalIgnoreCase);
             await File.WriteAllTextAsync(metadata.ReportFilePath, header.ToString(), Encoding.UTF8, cancellationToken).ConfigureAwait(false);
         }
         finally
@@ -63,11 +70,14 @@ public sealed class ReportWriter : IReportWriter, IDisposable
 
         await File.WriteAllBytesAsync(screenshotFullPath, entry.ScreenshotPngBytes, cancellationToken).ConfigureAwait(false);
 
-        var markdownSection = FormatEntryMarkdown(entry, screenshotRelativePath);
-
         await _writeLock.WaitAsync(cancellationToken).ConfigureAwait(false);
         try
         {
+            var seenConfigs = _seenTargetConfigsBySession.GetOrAdd(
+                metadata.SessionId,
+                static _ => new ConcurrentDictionary<string, (int, string)>(StringComparer.OrdinalIgnoreCase));
+
+            var markdownSection = FormatEntryMarkdown(entry, screenshotRelativePath, seenConfigs);
             await File.AppendAllTextAsync(metadata.ReportFilePath, markdownSection, Encoding.UTF8, cancellationToken).ConfigureAwait(false);
         }
         finally
@@ -100,7 +110,13 @@ public sealed class ReportWriter : IReportWriter, IDisposable
         }
     }
 
-    internal static string FormatEntryMarkdown(CaptureEntry entry, string screenshotPath)
+    internal static string FormatEntryMarkdown(CaptureEntry entry, string screenshotPath) =>
+        FormatEntryMarkdown(entry, screenshotPath, seenConfigs: null);
+
+    internal static string FormatEntryMarkdown(
+        CaptureEntry entry,
+        string screenshotPath,
+        ConcurrentDictionary<string, (int FirstCaptureIndex, string Fingerprint)>? seenConfigs)
     {
         var timestamp = entry.Timestamp.ToString("HH:mm:ss", CultureInfo.InvariantCulture);
         var categoryTag = entry.Category.ToBracketTag();
@@ -113,12 +129,18 @@ public sealed class ReportWriter : IReportWriter, IDisposable
         var windowTitle = string.IsNullOrWhiteSpace(desktop.WindowTitle)
             ? "(untitled)"
             : desktop.WindowTitle.Replace("\"", "'", StringComparison.Ordinal);
+        var targetAppDisplay = string.IsNullOrWhiteSpace(desktop.ExecutablePath)
+            ? $"`{processName}` — \"{windowTitle}\""
+            : $"`{processName}` — \"{windowTitle}\" (`{desktop.ExecutablePath}`)";
+
         var activeUrl = string.IsNullOrWhiteSpace(entry.Context.Web.ActiveUrl)
             ? "N/A"
-            : entry.Context.Web.ActiveUrl;
+            : SensitiveDataRedactor.RedactText(entry.Context.Web.ActiveUrl);
 
         var cdpLogs = entry.Context.Web.ConsoleAndNetworkErrors.Count > 0
-            ? SanitizeCodeBlock(string.Join(Environment.NewLine, entry.Context.Web.ConsoleAndNetworkErrors))
+            ? SanitizeCodeBlock(string.Join(
+                Environment.NewLine,
+                entry.Context.Web.ConsoleAndNetworkErrors.Select(SensitiveDataRedactor.RedactText)))
             : "None";
 
         var appLogs = CombineApplicationLogs(desktop.EventLogEntries, entry.Context.LocalLogLines);
@@ -129,8 +151,14 @@ public sealed class ReportWriter : IReportWriter, IDisposable
         sb.AppendLine(string.Create(CultureInfo.InvariantCulture, $"- **Screenshot:** ![Capture {entry.Index}]({screenshotPath})"));
         sb.AppendLine($"- **Visual Analysis (VLM):** {vlmDescription}");
         sb.AppendLine("- **Technical Context:**");
-        sb.AppendLine($"  - **Target App / Window:** `{processName}` — \"{windowTitle}\"");
+        sb.AppendLine($"  - **Target App / Window:** {targetAppDisplay}");
         sb.AppendLine($"  - **Web URL (if applicable):** `{activeUrl}`");
+
+        if (entry.Context.TargetExecutable is { } target)
+        {
+            AppendTargetExecutableContext(sb, entry, target, seenConfigs);
+        }
+
         sb.AppendLine("  - **Console / Network Errors (CDP):**");
         sb.AppendLine("    ```text");
         AppendIndentedLines(sb, cdpLogs, "    ");
@@ -142,6 +170,152 @@ public sealed class ReportWriter : IReportWriter, IDisposable
         sb.AppendLine();
 
         return sb.ToString();
+    }
+
+    private static void AppendTargetExecutableContext(
+        StringBuilder sb,
+        CaptureEntry entry,
+        TargetExecutableInfo target,
+        ConcurrentDictionary<string, (int FirstCaptureIndex, string Fingerprint)>? seenConfigs)
+    {
+        sb.AppendLine($"  - **Resolved Target Executable (`{target.ResolutionSource}`):**");
+        sb.AppendLine(string.Create(CultureInfo.InvariantCulture, $"    - **Process:** `{target.ProcessName}` (PID `{target.ProcessId}`)"));
+
+        if (!string.IsNullOrWhiteSpace(target.PrimaryBinaryPath))
+        {
+            var hostSuffix = !string.IsNullOrWhiteSpace(target.EntryAssemblyPath) &&
+                             !string.IsNullOrWhiteSpace(target.ExecutablePath) &&
+                             !string.Equals(target.EntryAssemblyPath, target.ExecutablePath, StringComparison.OrdinalIgnoreCase)
+                ? $" (Host: `{target.ExecutablePath}`)"
+                : string.Empty;
+            sb.AppendLine($"    - **Executable / Assembly:** `{target.PrimaryBinaryPath}`{hostSuffix}");
+        }
+
+        var versionBuildLine = FormatVersionAndBuildSummary(entry.Timestamp, target);
+        if (!string.IsNullOrWhiteSpace(versionBuildLine))
+        {
+            sb.AppendLine($"    - **Version / Build:** {versionBuildLine}");
+        }
+
+        if (!string.IsNullOrWhiteSpace(target.InferredRepositoryPath))
+        {
+            var branch = string.IsNullOrWhiteSpace(target.InferredBranch) ? "unknown" : target.InferredBranch;
+            sb.AppendLine($"    - **Repository / Branch:** `{target.InferredRepositoryPath}` (`{branch}`)");
+        }
+
+        if (target.ConfigurationFiles.Count > 0)
+        {
+            var binaryKey = !string.IsNullOrWhiteSpace(target.PrimaryBinaryPath)
+                ? target.PrimaryBinaryPath
+                : $"{target.ProcessName}:{target.ProcessId}";
+            var fingerprint = ComputeConfigFingerprint(target.ConfigurationFiles);
+
+            if (seenConfigs is not null &&
+                seenConfigs.TryGetValue(binaryKey, out var previous) &&
+                string.Equals(previous.Fingerprint, fingerprint, StringComparison.Ordinal))
+            {
+                sb.AppendLine(string.Create(
+                    CultureInfo.InvariantCulture,
+                    $"  - **Target Configuration:** Same as Capture #{previous.FirstCaptureIndex} (no config file changes detected)"));
+                return;
+            }
+
+            if (seenConfigs is not null)
+            {
+                seenConfigs[binaryKey] = (entry.Index, fingerprint);
+            }
+
+            foreach (var cfg in target.ConfigurationFiles)
+            {
+                var fenceLang = cfg.FileName.EndsWith(".json", StringComparison.OrdinalIgnoreCase) ? "json" : "ini";
+                sb.AppendLine($"  - **Target Configuration (`{cfg.FileName}`, redacted):**");
+                sb.AppendLine($"    ```{fenceLang}");
+                AppendIndentedLines(sb, SanitizeCodeBlock(cfg.RedactedContent), "    ");
+                sb.AppendLine("    ```");
+            }
+        }
+    }
+
+    private static string FormatVersionAndBuildSummary(DateTimeOffset captureTimestamp, TargetExecutableInfo target)
+    {
+        var parts = new List<string>(4);
+
+        var version = !string.IsNullOrWhiteSpace(target.ProductVersion)
+            ? target.ProductVersion
+            : target.FileVersion;
+        if (!string.IsNullOrWhiteSpace(version))
+        {
+            parts.Add($"`{version}`");
+        }
+
+        if (target.FileLastWriteUtc.HasValue)
+        {
+            var built = target.FileLastWriteUtc.Value.UtcDateTime.ToString("yyyy-MM-dd HH:mm:ss 'UTC'", CultureInfo.InvariantCulture);
+            var configSuffix = string.IsNullOrWhiteSpace(target.BuildConfiguration)
+                ? string.Empty
+                : $" (`{target.BuildConfiguration}`)";
+            parts.Add($"Built: `{built}`{configSuffix}");
+        }
+        else if (!string.IsNullOrWhiteSpace(target.BuildConfiguration))
+        {
+            parts.Add($"Configuration: `{target.BuildConfiguration}`");
+        }
+
+        if (target.ProcessStartedAt.HasValue)
+        {
+            var uptime = captureTimestamp - target.ProcessStartedAt.Value;
+            if (uptime < TimeSpan.Zero)
+            {
+                uptime = TimeSpan.Zero;
+            }
+
+            parts.Add($"Uptime: `{FormatUptime(uptime)}`");
+        }
+
+        if (target.WorkingSetBytes is > 0)
+        {
+            var mb = target.WorkingSetBytes.Value / (1024.0 * 1024.0);
+            parts.Add(string.Create(CultureInfo.InvariantCulture, $"RAM: `{mb:F0} MB`"));
+        }
+
+        return string.Join(" | ", parts);
+    }
+
+    private static string FormatUptime(TimeSpan uptime)
+    {
+        if (uptime.TotalDays >= 1)
+        {
+            return string.Create(CultureInfo.InvariantCulture, $"{(int)uptime.TotalDays}d {uptime.Hours}h {uptime.Minutes}m");
+        }
+
+        if (uptime.TotalHours >= 1)
+        {
+            return string.Create(CultureInfo.InvariantCulture, $"{(int)uptime.TotalHours}h {uptime.Minutes:D2}m {uptime.Seconds:D2}s");
+        }
+
+        if (uptime.TotalMinutes >= 1)
+        {
+            return string.Create(CultureInfo.InvariantCulture, $"{uptime.Minutes}m {uptime.Seconds:D2}s");
+        }
+
+        return string.Create(CultureInfo.InvariantCulture, $"{uptime.Seconds}s");
+    }
+
+    private static string ComputeConfigFingerprint(IReadOnlyList<TargetConfigFileSnapshot> configs)
+    {
+        var sb = new StringBuilder();
+        foreach (var cfg in configs)
+        {
+            sb.Append(cfg.FilePath)
+                .Append('|')
+                .Append(cfg.LastWriteUtc.UtcTicks.ToString(CultureInfo.InvariantCulture))
+                .Append('|')
+                .Append(cfg.RedactedContent)
+                .Append('\n');
+        }
+
+        var hash = SHA256.HashData(Encoding.UTF8.GetBytes(sb.ToString()));
+        return Convert.ToHexString(hash);
     }
 
     internal static string BuildShortSummary(string? userNote)
@@ -179,7 +353,7 @@ public sealed class ReportWriter : IReportWriter, IDisposable
         {
             if (!string.IsNullOrWhiteSpace(entry))
             {
-                combined.Add(entry.TrimEnd());
+                combined.Add(SensitiveDataRedactor.RedactText(entry.TrimEnd()));
             }
         }
 

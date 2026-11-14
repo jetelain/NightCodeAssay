@@ -136,6 +136,67 @@ public sealed class CapturePipelineAndAnnotationTests : IDisposable
     }
 
     [Fact]
+    public void CdpContextCollector_CorrelatesRequestMethodAndTracksLoopbackPorts()
+    {
+        using var httpClient = new HttpClient();
+        using var cdp = new CdpContextCollector(
+            Options.Create(new AssayOptions()),
+            httpClient,
+            NullLogger<CdpContextCollector>.Instance);
+
+        cdp.ProcessCdpMessage("""
+        {
+          "method": "Network.requestWillBeSent",
+          "params": {
+            "requestId": "req-42",
+            "request": { "url": "http://localhost:5270/api/orders", "method": "POST" }
+          }
+        }
+        """);
+
+        cdp.ProcessCdpMessage("""
+        {
+          "method": "Network.responseReceived",
+          "params": {
+            "requestId": "req-42",
+            "response": { "status": 500, "statusText": "Internal Server Error", "url": "http://localhost:5270/api/orders" }
+          }
+        }
+        """);
+
+        var errors = cdp.GetBufferedErrorsSnapshot();
+        Assert.Single(errors);
+        Assert.Equal("[HTTP 500 Internal Server Error] POST http://localhost:5270/api/orders", errors[0]);
+        Assert.Contains(5270, cdp.GetObservedLocalhostPortsSnapshot());
+
+        cdp.ProcessCdpMessage("""
+        {
+          "method": "Network.requestWillBeSent",
+          "params": {
+            "requestId": "req-99",
+            "request": { "url": "http://localhost:5310/api/checkout", "method": "DELETE" }
+          }
+        }
+        """);
+
+        cdp.ProcessCdpMessage("""
+        {
+          "method": "Network.loadingFailed",
+          "params": {
+            "requestId": "req-99",
+            "type": "XHR",
+            "errorText": "net::ERR_CONNECTION_REFUSED"
+          }
+        }
+        """);
+
+        errors = cdp.GetBufferedErrorsSnapshot();
+        Assert.Equal(2, errors.Count);
+        Assert.Equal("[Network Failed (XHR)] DELETE net::ERR_CONNECTION_REFUSED (http://localhost:5310/api/checkout)", errors[1]);
+        Assert.Contains(5310, cdp.GetObservedLocalhostPortsSnapshot());
+    }
+
+    [Fact]
     public void CdpContextCollector_ParsesFirefoxBiDiEventsAndContextTree()
     {
         using var httpClient = new HttpClient();

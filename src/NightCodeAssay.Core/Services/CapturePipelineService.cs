@@ -246,7 +246,7 @@ public sealed class CapturePipelineService : IAsyncDisposable
         }
     }
 
-    internal static string? ResolveGitBranch(string? repositoryPath)
+    public static string? ResolveGitBranch(string? repositoryPath)
     {
         if (string.IsNullOrWhiteSpace(repositoryPath))
         {
@@ -255,7 +255,38 @@ public sealed class CapturePipelineService : IAsyncDisposable
 
         try
         {
-            var headPath = Path.Combine(repositoryPath, ".git", "HEAD");
+            var gitPath = Path.Combine(repositoryPath, ".git");
+            string gitDir;
+            if (Directory.Exists(gitPath))
+            {
+                gitDir = gitPath;
+            }
+            else if (File.Exists(gitPath))
+            {
+                var firstLine = File.ReadLines(gitPath).FirstOrDefault()?.Trim();
+                const string gitDirPrefix = "gitdir:";
+                if (string.IsNullOrWhiteSpace(firstLine) ||
+                    !firstLine.StartsWith(gitDirPrefix, StringComparison.OrdinalIgnoreCase))
+                {
+                    return null;
+                }
+
+                var rawTarget = firstLine[gitDirPrefix.Length..].Trim();
+                if (string.IsNullOrWhiteSpace(rawTarget))
+                {
+                    return null;
+                }
+
+                gitDir = Path.IsPathRooted(rawTarget)
+                    ? Path.GetFullPath(rawTarget)
+                    : Path.GetFullPath(Path.Combine(repositoryPath, rawTarget));
+            }
+            else
+            {
+                return null;
+            }
+
+            var headPath = Path.Combine(gitDir, "HEAD");
             if (!File.Exists(headPath))
             {
                 return null;

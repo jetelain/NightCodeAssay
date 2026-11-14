@@ -17,6 +17,8 @@ namespace NightCodeAssay.Infrastructure.Context;
 public sealed class CdpContextCollector : IAsyncDisposable, IDisposable
 {
     internal const int RingBufferCapacity = 50;
+    private const int MaxTrackedRequestMethods = 256;
+    private const int MaxObservedLocalhostPorts = 16;
 
     private static readonly TimeSpan BiDiRefreshTimeout = TimeSpan.FromMilliseconds(350);
 
@@ -25,6 +27,9 @@ public sealed class CdpContextCollector : IAsyncDisposable, IDisposable
     private readonly ILogger<CdpContextCollector> _logger;
     private readonly object _ringLock = new();
     private readonly Queue<string> _errorRingBuffer = new(RingBufferCapacity);
+    private readonly Dictionary<string, (string? Method, string? Url)> _recentRequests = new(StringComparer.Ordinal);
+    private readonly Queue<string> _recentRequestOrder = new(MaxTrackedRequestMethods);
+    private readonly List<int> _observedLocalhostPorts = [];
     private readonly SemaphoreSlim _bidiSendLock = new(1, 1);
 
     private CancellationTokenSource? _sessionCts;
@@ -61,6 +66,9 @@ public sealed class CdpContextCollector : IAsyncDisposable, IDisposable
         lock (_ringLock)
         {
             _errorRingBuffer.Clear();
+            _recentRequests.Clear();
+            _recentRequestOrder.Clear();
+            _observedLocalhostPorts.Clear();
             alreadyRunning =
                 _sessionCts is not null &&
                 !_sessionCts.IsCancellationRequested &&
@@ -207,17 +215,21 @@ public sealed class CdpContextCollector : IAsyncDisposable, IDisposable
 
             string? biDiUrl;
             IReadOnlyList<string> errors;
+            IReadOnlyList<int> ports;
             lock (_ringLock)
             {
                 biDiUrl = _isBiDiConnected ? _activeBiDiUrl : null;
                 errors = _errorRingBuffer.ToArray();
+                RecordObservedLoopbackUrlLocked(biDiUrl);
+                ports = _observedLocalhostPorts.ToArray();
             }
 
             return new WebContext(
                 ActiveUrl: biDiUrl,
                 PageTitle: null,
                 ConsoleAndNetworkErrors: errors,
-                IsCdpConnected: _isBiDiConnected);
+                IsCdpConnected: _isBiDiConnected,
+                ObservedLocalhostPorts: ports);
         }
 
         var target = await TryDiscoverActivePageTargetAsync(desktopContext?.WindowTitle, cancellationToken).ConfigureAwait(false);
@@ -227,6 +239,7 @@ public sealed class CdpContextCollector : IAsyncDisposable, IDisposable
             {
                 _activeCdpUrl = target.Url;
                 _activeCdpTitle = target.Title;
+                RecordObservedLoopbackUrlLocked(target.Url);
             }
 
             _isCdpConnected = true;
@@ -235,6 +248,7 @@ public sealed class CdpContextCollector : IAsyncDisposable, IDisposable
         string? url;
         string? title;
         IReadOnlyList<string> snapshotErrors;
+        IReadOnlyList<int> snapshotPorts;
         lock (_ringLock)
         {
             if (isChromiumForeground)
@@ -248,14 +262,17 @@ public sealed class CdpContextCollector : IAsyncDisposable, IDisposable
                 title = target?.Title ?? (_isCdpConnected ? _activeCdpTitle : null);
             }
 
+            RecordObservedLoopbackUrlLocked(url);
             snapshotErrors = _errorRingBuffer.ToArray();
+            snapshotPorts = _observedLocalhostPorts.ToArray();
         }
 
         return new WebContext(
             ActiveUrl: url,
             PageTitle: title,
             ConsoleAndNetworkErrors: snapshotErrors,
-            IsCdpConnected: target is not null || (isChromiumForeground ? _isCdpConnected : IsCdpConnected));
+            IsCdpConnected: target is not null || (isChromiumForeground ? _isCdpConnected : IsCdpConnected),
+            ObservedLocalhostPorts: snapshotPorts);
     }
 
     internal void ProcessCdpMessage(string rawJson)
@@ -303,6 +320,12 @@ public sealed class CdpContextCollector : IAsyncDisposable, IDisposable
                 return;
             }
 
+            if (method is "Network.requestWillBeSent" or "network.beforeRequestSent")
+            {
+                TrackOutgoingRequest(@params);
+                return;
+            }
+
             var formatted = method switch
             {
                 "Runtime.exceptionThrown" => FormatExceptionThrown(@params),
@@ -343,6 +366,14 @@ public sealed class CdpContextCollector : IAsyncDisposable, IDisposable
         }
     }
 
+    internal IReadOnlyList<int> GetObservedLocalhostPortsSnapshot()
+    {
+        lock (_ringLock)
+        {
+            return _observedLocalhostPorts.ToArray();
+        }
+    }
+
     private void UpdateBiDiNavigation(string? contextId, string url)
     {
         lock (_ringLock)
@@ -353,7 +384,98 @@ public sealed class CdpContextCollector : IAsyncDisposable, IDisposable
             }
 
             _activeBiDiUrl = url;
+            RecordObservedLoopbackUrlLocked(url);
         }
+    }
+
+    private void TrackOutgoingRequest(JsonElement @params)
+    {
+        if (!@params.TryGetProperty("request", out var requestObj) || requestObj.ValueKind != JsonValueKind.Object)
+        {
+            return;
+        }
+
+        var url = TryGetString(requestObj, "url");
+        var httpMethod = TryGetString(requestObj, "method");
+        var requestId = TryGetString(@params, "requestId") ?? TryGetString(requestObj, "request");
+
+        lock (_ringLock)
+        {
+            RecordObservedLoopbackUrlLocked(url);
+
+            if (!string.IsNullOrWhiteSpace(requestId) &&
+                (!string.IsNullOrWhiteSpace(httpMethod) || !string.IsNullOrWhiteSpace(url)))
+            {
+                var normalizedMethod = string.IsNullOrWhiteSpace(httpMethod)
+                    ? null
+                    : httpMethod.Trim().ToUpperInvariant();
+                if (!_recentRequests.ContainsKey(requestId))
+                {
+                    while (_recentRequestOrder.Count >= MaxTrackedRequestMethods)
+                    {
+                        var evicted = _recentRequestOrder.Dequeue();
+                        _recentRequests.Remove(evicted);
+                    }
+
+                    _recentRequestOrder.Enqueue(requestId);
+                }
+
+                _recentRequests[requestId] = (normalizedMethod, url);
+            }
+        }
+    }
+
+    private void RecordObservedLoopbackUrlLocked(string? url)
+    {
+        if (!LocalPortProcessResolver.TryExtractLoopbackPort(url, out var port))
+        {
+            return;
+        }
+
+        if (port == _options.Value.CdpPort)
+        {
+            return;
+        }
+
+        _observedLocalhostPorts.Remove(port);
+        _observedLocalhostPorts.Insert(0, port);
+        if (_observedLocalhostPorts.Count > MaxObservedLocalhostPorts)
+        {
+            _observedLocalhostPorts.RemoveAt(_observedLocalhostPorts.Count - 1);
+        }
+    }
+
+    private (string? Method, string? Url) LookupTrackedRequestInfo(JsonElement @params)
+    {
+        string? inlineMethod = null;
+        string? inlineUrl = null;
+        string? bidiRequestId = null;
+
+        if (@params.TryGetProperty("request", out var requestObj) && requestObj.ValueKind == JsonValueKind.Object)
+        {
+            var rawMethod = TryGetString(requestObj, "method");
+            if (!string.IsNullOrWhiteSpace(rawMethod))
+            {
+                inlineMethod = rawMethod.Trim().ToUpperInvariant();
+            }
+
+            inlineUrl = TryGetString(requestObj, "url");
+            bidiRequestId = TryGetString(requestObj, "request");
+        }
+
+        var requestId = bidiRequestId ?? TryGetString(@params, "requestId");
+        if (!string.IsNullOrWhiteSpace(requestId))
+        {
+            lock (_ringLock)
+            {
+                if (_recentRequests.TryGetValue(requestId, out var stored))
+                {
+                    return (inlineMethod ?? stored.Method, inlineUrl ?? stored.Url);
+                }
+            }
+        }
+
+        return (inlineMethod, inlineUrl);
     }
 
     private void PushError(string entry)
@@ -548,7 +670,7 @@ public sealed class CdpContextCollector : IAsyncDisposable, IDisposable
 
             await SendBiDiJsonTextAsync(
                 ws,
-                """{"id":2,"method":"session.subscribe","params":{"events":["log.entryAdded","network.responseCompleted","network.fetchError","browsingContext.load","browsingContext.domContentLoaded","browsingContext.navigationCommitted","browsingContext.historyUpdated","browsingContext.fragmentNavigated"]}}""",
+                """{"id":2,"method":"session.subscribe","params":{"events":["log.entryAdded","network.beforeRequestSent","network.responseCompleted","network.fetchError","browsingContext.load","browsingContext.domContentLoaded","browsingContext.navigationCommitted","browsingContext.historyUpdated","browsingContext.fragmentNavigated"]}}""",
                 cancellationToken).ConfigureAwait(false);
 
             await SendBiDiJsonTextAsync(
@@ -969,6 +1091,7 @@ public sealed class CdpContextCollector : IAsyncDisposable, IDisposable
             {
                 _activeBiDiUrl = chosenUrl;
                 _activeBiDiContextId = chosenContextId ?? _activeBiDiContextId;
+                RecordObservedLoopbackUrlLocked(chosenUrl);
             }
         }
 
@@ -1079,11 +1202,26 @@ public sealed class CdpContextCollector : IAsyncDisposable, IDisposable
             : $"[Browser Error] {detail} @ {url}";
     }
 
-    private static string? FormatNetworkHttpError(JsonElement @params)
+    private string? FormatNetworkHttpError(JsonElement @params)
     {
         if (!@params.TryGetProperty("response", out var response) || response.ValueKind != JsonValueKind.Object)
         {
             return null;
+        }
+
+        var tracked = LookupTrackedRequestInfo(@params);
+        var url = TryGetString(response, "url");
+        if (string.IsNullOrWhiteSpace(url))
+        {
+            url = tracked.Url;
+        }
+
+        if (!string.IsNullOrWhiteSpace(url))
+        {
+            lock (_ringLock)
+            {
+                RecordObservedLoopbackUrlLocked(url);
+            }
         }
 
         if (!response.TryGetProperty("status", out var statusProp) || !statusProp.TryGetInt32(out var status) || status < 400)
@@ -1091,28 +1229,32 @@ public sealed class CdpContextCollector : IAsyncDisposable, IDisposable
             return null;
         }
 
-        var url = TryGetString(response, "url");
-        if (string.IsNullOrWhiteSpace(url) &&
-            @params.TryGetProperty("request", out var requestObj) &&
-            requestObj.ValueKind == JsonValueKind.Object)
-        {
-            url = TryGetString(requestObj, "url");
-        }
-
         url ??= "(unknown url)";
         var statusText = TryGetString(response, "statusText");
+        var methodPrefix = string.IsNullOrWhiteSpace(tracked.Method) ? string.Empty : $"{tracked.Method} ";
         return string.Create(
             CultureInfo.InvariantCulture,
-            $"[HTTP {status}{(string.IsNullOrWhiteSpace(statusText) ? string.Empty : $" {statusText}")}] {url}");
+            $"[HTTP {status}{(string.IsNullOrWhiteSpace(statusText) ? string.Empty : $" {statusText}")}] {methodPrefix}{url}");
     }
 
-    private static string? FormatNetworkLoadingFailed(JsonElement @params)
+    private string? FormatNetworkLoadingFailed(JsonElement @params)
     {
         var errorText = TryGetString(@params, "errorText") ?? "Request failed";
         var resourceType = TryGetString(@params, "type");
+        var (httpMethod, url) = LookupTrackedRequestInfo(@params);
+        if (!string.IsNullOrWhiteSpace(url))
+        {
+            lock (_ringLock)
+            {
+                RecordObservedLoopbackUrlLocked(url);
+            }
+        }
+
+        var methodPrefix = string.IsNullOrWhiteSpace(httpMethod) ? string.Empty : $"{httpMethod} ";
+        var urlSuffix = string.IsNullOrWhiteSpace(url) ? string.Empty : $" ({url})";
         return string.IsNullOrWhiteSpace(resourceType)
-            ? $"[Network Failed] {errorText}"
-            : $"[Network Failed ({resourceType})] {errorText}";
+            ? $"[Network Failed] {methodPrefix}{errorText}{urlSuffix}"
+            : $"[Network Failed ({resourceType})] {methodPrefix}{errorText}{urlSuffix}";
     }
 
     private static string? FormatBiDiLogEntryAdded(JsonElement @params)
@@ -1162,7 +1304,7 @@ public sealed class CdpContextCollector : IAsyncDisposable, IDisposable
             : $"[BiDi Error] {text} ({callFrameUrl})";
     }
 
-    private static string? FormatBiDiFetchError(JsonElement @params)
+    private string? FormatBiDiFetchError(JsonElement @params)
     {
         var errorText = TryGetString(@params, "errorText") ?? "Fetch failed";
         string? url = null;
@@ -1171,9 +1313,24 @@ public sealed class CdpContextCollector : IAsyncDisposable, IDisposable
             url = TryGetString(requestObj, "url");
         }
 
+        var (httpMethod, trackedUrl) = LookupTrackedRequestInfo(@params);
+        if (string.IsNullOrWhiteSpace(url))
+        {
+            url = trackedUrl;
+        }
+
+        if (!string.IsNullOrWhiteSpace(url))
+        {
+            lock (_ringLock)
+            {
+                RecordObservedLoopbackUrlLocked(url);
+            }
+        }
+
+        var methodPrefix = string.IsNullOrWhiteSpace(httpMethod) ? string.Empty : $"{httpMethod} ";
         return string.IsNullOrWhiteSpace(url)
-            ? $"[Network Failed] {errorText}"
-            : $"[Network Failed] {errorText} ({url})";
+            ? $"[Network Failed] {methodPrefix}{errorText}"
+            : $"[Network Failed] {errorText} ({methodPrefix}{url})";
     }
 
     private static string? TryGetString(JsonElement element, string propertyName)

@@ -332,6 +332,9 @@ public partial class App : Application
         services.AddSingleton<IScreenCaptureService, Win32ScreenCaptureService>();
         services.AddSingleton<IGlobalHotkeyService, GlobalHotkeyService>();
         services.AddSingleton<IBrowserLauncherService, BrowserLauncherService>();
+        services.AddSingleton<LocalPortProcessResolver>();
+        services.AddSingleton<TargetConfigCollector>();
+        services.AddSingleton<TargetProcessInspector>();
         services.AddSingleton<WindowsDesktopContextCollector>();
         services.AddSingleton<WorkspaceLogTailer>();
         services.AddHttpClient<CdpContextCollector>();

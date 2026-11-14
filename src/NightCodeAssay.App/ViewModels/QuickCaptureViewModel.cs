@@ -90,7 +90,12 @@ public sealed partial class QuickCaptureViewModel : ObservableObject, IDisposabl
             ? $" | {context.Web.ActiveUrl}"
             : string.Empty;
 
-        ContextSummary = $"{Capture.Width}x{Capture.Height} | {appPart}{urlPart}";
+        var targetPart = context.TargetExecutable is { } target &&
+                         !string.Equals(target.ProcessName, context.Desktop.ProcessName, StringComparison.OrdinalIgnoreCase)
+            ? $" | Target: {target.ProcessName}"
+            : string.Empty;
+
+        ContextSummary = $"{Capture.Width}x{Capture.Height} | {appPart}{urlPart}{targetPart}";
     }
 
     public void SetHighlight(HighlightRect normalizedRect)
