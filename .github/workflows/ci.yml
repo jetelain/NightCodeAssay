@@ -67,6 +67,7 @@ jobs:
         with:
           name: nuget-package
           path: ./artifacts/nuget/*.nupkg
+          archive: false
           if-no-files-found: error
 
       - name: Upload portable executable artifact
@@ -74,6 +75,7 @@ jobs:
         with:
           name: NightCodeAssay-win-x64
           path: ./artifacts/portable/NightCodeAssay-win-x64.zip
+          archive: false
           if-no-files-found: error
 
       - name: NuGet login
