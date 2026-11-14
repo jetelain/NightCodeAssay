@@ -114,7 +114,7 @@ public sealed partial class SessionControlViewModel : ObservableObject
 
     public bool HasReportAvailable => (_pipeline.ActiveSession ?? _lastSession) is not null;
 
-    public bool CanSendToIdeation => HasReportAvailable && SelectedWorkspace is { IsStandalone: false } && IsCompanionConnected;
+    public bool CanSendToTriage => HasReportAvailable && SelectedWorkspace is { IsStandalone: false } && IsCompanionConnected;
 
     public SessionMetadata? CurrentOrLastSession => _pipeline.ActiveSession ?? _lastSession;
 
@@ -129,17 +129,17 @@ public sealed partial class SessionControlViewModel : ObservableObject
     {
         OnPropertyChanged(nameof(SessionButtonLabel));
         OnPropertyChanged(nameof(HasReportAvailable));
-        OnPropertyChanged(nameof(CanSendToIdeation));
+        OnPropertyChanged(nameof(CanSendToTriage));
     }
 
     partial void OnSelectedWorkspaceChanged(WorkspaceItemViewModel? value)
     {
-        OnPropertyChanged(nameof(CanSendToIdeation));
+        OnPropertyChanged(nameof(CanSendToTriage));
     }
 
     partial void OnIsCompanionConnectedChanged(bool value)
     {
-        OnPropertyChanged(nameof(CanSendToIdeation));
+        OnPropertyChanged(nameof(CanSendToTriage));
     }
 
     public void SyncFromPipeline()
@@ -166,7 +166,7 @@ public sealed partial class SessionControlViewModel : ObservableObject
         UpdateCdpDisplay();
         RefreshHotkeyDisplay();
         OnPropertyChanged(nameof(HasReportAvailable));
-        OnPropertyChanged(nameof(CanSendToIdeation));
+        OnPropertyChanged(nameof(CanSendToTriage));
     }
 
     public void RefreshHotkeyDisplay()
@@ -373,7 +373,7 @@ public sealed partial class SessionControlViewModel : ObservableObject
     }
 
     [RelayCommand]
-    private async Task SendToIdeationAsync()
+    private async Task SendToTriageAsync()
     {
         var session = CurrentOrLastSession;
         var workspace = SelectedWorkspace?.Workspace;
@@ -394,20 +394,22 @@ public sealed partial class SessionControlViewModel : ObservableObject
                 return;
             }
 
-            var request = new CreateCompanionIdeationRequestDto
+            var request = new CreateCompanionTriageRequestDto
             {
                 Title = $"Assay Exploratory Report — {session.StartedAt:yyyy-MM-dd HH:mm}",
                 ReportMarkdown = markdown,
+                BaseBranch = session.ActiveBranch,
                 SessionDirectoryPath = session.SessionDirectoryPath
             };
 
-            var response = await _companionClient.CreateIdeationSessionAsync(workspace.Id, request);
+            var response = await _companionClient.CreateTriageSessionAsync(workspace.Id, request);
             if (response is null)
             {
-                StatusMessage = "Failed to send report to NightCodeForge Ideation (check connection or copy to clipboard).";
+                StatusMessage = "Failed to send report to NightCodeForge Triage (check connection or copy to clipboard).";
                 return;
             }
 
+            var draftSuffix = string.IsNullOrWhiteSpace(response.DraftId) ? string.Empty : $" #{response.DraftId}";
             var targetUrl = response.EffectiveUrl;
             if (!string.IsNullOrWhiteSpace(targetUrl))
             {
@@ -415,11 +417,11 @@ public sealed partial class SessionControlViewModel : ObservableObject
                     ? targetUrl
                     : $"{_options.Value.GetEffectiveNightCodeForgeUrl()}/{targetUrl.TrimStart('/')}";
                 OpenWithShell(fullUrl);
-                StatusMessage = $"Created NightCodeForge Ideation #{response.ConversationId} and opened browser.";
+                StatusMessage = $"Created NightCodeForge Triage draft{draftSuffix} and opened browser.";
             }
             else
             {
-                StatusMessage = $"Created NightCodeForge Ideation #{response.ConversationId}.";
+                StatusMessage = $"Created NightCodeForge Triage draft{draftSuffix}.";
             }
         }
         finally

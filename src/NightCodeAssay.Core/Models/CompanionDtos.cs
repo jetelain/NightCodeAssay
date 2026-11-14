@@ -69,7 +69,7 @@ public sealed record CompanionWorkspaceDto
         !string.IsNullOrWhiteSpace(Emoji) ? $"{Emoji} {Name}" : Name;
 }
 
-public sealed record CreateCompanionIdeationRequestDto
+public sealed record CreateCompanionTriageRequestDto
 {
     [JsonPropertyName("title")]
     public string? Title { get; init; }
@@ -77,14 +77,17 @@ public sealed record CreateCompanionIdeationRequestDto
     [JsonPropertyName("reportMarkdown")]
     public string ReportMarkdown { get; init; } = string.Empty;
 
+    [JsonPropertyName("baseBranch")]
+    public string? BaseBranch { get; init; }
+
     [JsonPropertyName("sessionDirectoryPath")]
     public string? SessionDirectoryPath { get; init; }
 }
 
-public sealed record CreateCompanionIdeationResponseDto
+public sealed record CreateCompanionTriageResponseDto
 {
-    [JsonPropertyName("conversationId")]
-    public int ConversationId { get; init; }
+    [JsonPropertyName("draftId")]
+    public string? DraftId { get; init; }
 
     [JsonPropertyName("workspaceId")]
     public int WorkspaceId { get; init; }
@@ -92,14 +95,14 @@ public sealed record CreateCompanionIdeationResponseDto
     [JsonPropertyName("title")]
     public string? Title { get; init; }
 
-    [JsonPropertyName("ideationUrl")]
-    public string? IdeationUrl { get; init; }
+    [JsonPropertyName("triageUrl")]
+    public string? TriageUrl { get; init; }
 
     [JsonPropertyName("url")]
     public string? Url { get; init; }
 
     [JsonIgnore]
-    public string? EffectiveUrl => !string.IsNullOrWhiteSpace(IdeationUrl) ? IdeationUrl : Url;
+    public string? EffectiveUrl => !string.IsNullOrWhiteSpace(TriageUrl) ? TriageUrl : Url;
 }
 
 [JsonSourceGenerationOptions(PropertyNameCaseInsensitive = true)]
@@ -108,8 +111,8 @@ public sealed record CreateCompanionIdeationResponseDto
 [JsonSerializable(typeof(CompanionWorkspacesResponseDto))]
 [JsonSerializable(typeof(CompanionWorkspaceDto))]
 [JsonSerializable(typeof(IReadOnlyList<CompanionWorkspaceDto>))]
-[JsonSerializable(typeof(CreateCompanionIdeationRequestDto))]
-[JsonSerializable(typeof(CreateCompanionIdeationResponseDto))]
+[JsonSerializable(typeof(CreateCompanionTriageRequestDto))]
+[JsonSerializable(typeof(CreateCompanionTriageResponseDto))]
 public partial class CompanionJsonSerializerContext : JsonSerializerContext
 {
 }

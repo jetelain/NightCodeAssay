@@ -94,19 +94,19 @@ public sealed class NightCodeForgeCompanionClient : INightCodeForgeClient
         }
     }
 
-    public async Task<CreateCompanionIdeationResponseDto?> CreateIdeationSessionAsync(
+    public async Task<CreateCompanionTriageResponseDto?> CreateTriageSessionAsync(
         int workspaceId,
-        CreateCompanionIdeationRequestDto requestBody,
+        CreateCompanionTriageRequestDto requestBody,
         CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(requestBody);
 
         try
         {
-            using var request = CreateRequest(HttpMethod.Post, $"/api/companion/workspaces/{workspaceId}/ideation");
+            using var request = CreateRequest(HttpMethod.Post, $"/api/companion/workspaces/{workspaceId}/triage");
             request.Content = JsonContent.Create(
                 requestBody,
-                CompanionJsonSerializerContext.Default.CreateCompanionIdeationRequestDto);
+                CompanionJsonSerializerContext.Default.CreateCompanionTriageRequestDto);
 
             using var timeoutCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
             timeoutCts.CancelAfter(TimeSpan.FromSeconds(15));
@@ -115,19 +115,19 @@ public sealed class NightCodeForgeCompanionClient : INightCodeForgeClient
             if (!response.IsSuccessStatusCode)
             {
                 IsConnected = false;
-                _logger.LogWarning("NightCodeForge ideation handoff failed with HTTP {StatusCode}.", (int)response.StatusCode);
+                _logger.LogWarning("NightCodeForge triage handoff failed with HTTP {StatusCode}.", (int)response.StatusCode);
                 return null;
             }
 
             IsConnected = true;
             return await response.Content.ReadFromJsonAsync(
-                CompanionJsonSerializerContext.Default.CreateCompanionIdeationResponseDto,
+                CompanionJsonSerializerContext.Default.CreateCompanionTriageResponseDto,
                 timeoutCts.Token).ConfigureAwait(false);
         }
         catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException or JsonException or InvalidOperationException)
         {
             IsConnected = false;
-            _logger.LogWarning(ex, "Unable to reach NightCodeForge ideation handoff endpoint.");
+            _logger.LogWarning(ex, "Unable to reach NightCodeForge triage handoff endpoint.");
             return null;
         }
     }

@@ -1,6 +1,6 @@
 # Project Goal: NightCode Assay (Companion Exploratory Testing Tool for NightCodeForge)
 
-Build a lightweight Windows desktop application in **C# / .NET 10 (Avalonia)** designed as a companion to **NightCodeForge** for manual exploratory software testing (covering both Web and Desktop applications). As a user or maintainer tests delivered changes from the autonomous forge, **NightCode Assay** captures screenshots, tester observations, and rich technical context on the fly, uses a Vision-Language Model (VLM) via a simple `OllamaSharp` or `OpenAI` connector to describe visual UI states/anomalies, and hands off a clean, structured Markdown report directly back into NightCodeForge (via Clipboard, Local Session Files, or 1-Click Ideation Chat creation).
+Build a lightweight Windows desktop application in **C# / .NET 10 (Avalonia)** designed as a companion to **NightCodeForge** for manual exploratory software testing (covering both Web and Desktop applications). As a user or maintainer tests delivered changes from the autonomous forge, **NightCode Assay** captures screenshots, tester observations, and rich technical context on the fly, uses a Vision-Language Model (VLM) via a simple `OllamaSharp` or `OpenAI` connector to describe visual UI states/anomalies, and hands off a clean, structured Markdown report directly back into NightCodeForge (via Clipboard, Local Session Files, or 1-Click Sandboxed Triage handoff).
 
 ---
 
@@ -20,7 +20,7 @@ To avoid duplicating LLM/VLM settings and repository paths while keeping `NightC
 2. **NightCodeForge Companion HTTP API (`/api/companion/*`):**
    - `GET /api/companion/config`: Returns NightCodeForge's active LLM configuration (`providerType`, `endpoint`, `defaultModelId`, `architectModelId`, and `openAiCompatible` endpoint/API key).
    - `GET /api/companion/workspaces`: Returns registered NightCodeForge workspaces (`id`, `name`, `emoji`, `repositoryPath`, `defaultBaseBranch`) so the tester can pick the workspace under test from a dropdown in Assay.
-   - `POST /api/companion/workspaces/{workspaceId}/ideation`: Creates a new Ideation conversation in NightCodeForge pre-seeded with the compiled exploratory `report.md` (and local session asset paths), returning `{ conversationId, url }` so Assay can open the exact Ideation session in the user's browser with one click.
+   - `POST /api/companion/workspaces/{workspaceId}/triage`: Stages a new Sandboxed Triage submission draft in NightCodeForge pre-seeded with the compiled exploratory `report.md` (and local session asset paths), returning `{ draftId, triageUrl }` so Assay can open the exact pre-filled Triage form (`/w/{workspaceId}/triage?draftId={draftId}`) in the user's browser with one click.
 
 3. **Optional Local Overrides & Standalone Fallback (`appsettings.json`):**
    - Assay stores only minimal preferences in its own `appsettings.json` (`NightCodeForgeUrl` defaulting to `http://localhost:5270`, `Hotkey`, `CdpPort`, `LogFilePaths`, and optional LLM overrides: `ProviderTypeOverride`, `EndpointOverride`, `VisionModelIdOverride`).
@@ -38,7 +38,7 @@ To avoid duplicating LLM/VLM settings and repository paths while keeping `NightC
      - **Handoff & Export Actions:**
        - 📂 **Open Session Folder / Open `report.md`** (`./sessions/YYYY-MM-DD_HH-mm/`).
        - 📋 **Copy Report to Clipboard** (formatted Markdown ready to paste into NightCodeForge Review Room *"Request Changes"*, *Ideation*, or *Triage*).
-       - 💡 **Send to NightCodeForge Ideation** (creates an Ideation chat for the selected workspace via `POST /api/companion/workspaces/{id}/ideation` and launches the browser).
+       - 🛡️ **Send to NightCodeForge Triage** (stages a pre-filled Sandboxed Triage submission for the selected workspace via `POST /api/companion/workspaces/{id}/triage` and launches the browser).
    - Starting a session automatically creates `./sessions/YYYY-MM-DD_HH-mm/` containing an `assets/` subfolder and an initialized `report.md` pre-populated with system & workspace metadata (OS version, screen resolution, workspace name/branch, start timestamp).
 
 2. **On-the-Fly Capture via Global Hotkey (`Ctrl+Alt+S`):**
@@ -120,7 +120,7 @@ Structure `report.md` specifically so NightCodeForge's Ideation Architect, Triag
     ```
 ```
 
-*(Note: When copying to clipboard or sending to NightCodeForge Ideation, image paths and log snippets are formatted so agents and markdown viewers can reference the exact local artifacts on disk.)*
+*(Note: When copying to clipboard or sending to NightCodeForge Triage, image paths and log snippets are formatted so agents and markdown viewers can reference the exact local artifacts on disk.)*
 
 ---
 
@@ -133,7 +133,7 @@ Structure `report.md` specifically so NightCodeForge's Ideation Architect, Triag
   - `src/NightCodeAssay.App`: Avalonia desktop application (System Tray icon, Session Control Window, and Topmost Quick-Capture Floating Modal with red-rectangle annotation canvas).
   - `tests/NightCodeAssay.Tests`: Unit tests for `DefaultKeyReader`, report formatting, log tailing, VLM fallback handling, and NightCodeForge client integration.
 * **Companion Specification in `NightCodeForge`:**
-  - Specified in [STEP_12_37_COMPANION_API_KEY_STORE_AND_ASSAY_HANDOFF_ENDPOINTS.md](../../NightCodeForge/docs/features/STEP_12_37_COMPANION_API_KEY_STORE_AND_ASSAY_HANDOFF_ENDPOINTS.md): DPAPI-backed `default-key.dat` store (`IApiKeyStore`) and the `/api/companion/*` endpoints (`config`, `workspaces`, and `ideation` session creation with `?conversationId={id}` deep-link support).
+  - Specified in [STEP_12_37_COMPANION_API_KEY_STORE_AND_ASSAY_HANDOFF_ENDPOINTS.md](../../NightCodeForge/docs/features/STEP_12_37_COMPANION_API_KEY_STORE_AND_ASSAY_HANDOFF_ENDPOINTS.md): DPAPI-backed `default-key.dat` store (`IApiKeyStore`) and the `/api/companion/*` endpoints (`config`, `workspaces`, and `triage` draft staging with `?draftId={id}` deep-link support).
 * **Deliverables:**
   1. Scaffold the complete .NET 10 solution in `NightCodeAssay` and implement all classes end-to-end (no stubs or `// TODO` placeholders).
   2. Verify the solution compiles cleanly (`dotnet build`) and all unit tests pass (`dotnet test`).

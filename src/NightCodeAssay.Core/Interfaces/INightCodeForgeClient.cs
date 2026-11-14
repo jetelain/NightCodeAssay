@@ -10,8 +10,8 @@ public interface INightCodeForgeClient
 
     Task<IReadOnlyList<CompanionWorkspaceDto>> GetWorkspacesAsync(CancellationToken cancellationToken = default);
 
-    Task<CreateCompanionIdeationResponseDto?> CreateIdeationSessionAsync(
+    Task<CreateCompanionTriageResponseDto?> CreateTriageSessionAsync(
         int workspaceId,
-        CreateCompanionIdeationRequestDto request,
+        CreateCompanionTriageRequestDto request,
         CancellationToken cancellationToken = default);
 }

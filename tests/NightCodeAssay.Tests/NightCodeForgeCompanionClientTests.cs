@@ -15,7 +15,7 @@ public sealed class NightCodeForgeCompanionClientTests
     public async Task Endpoints_AttachBearerTokenAndDeserializePayloads()
     {
         string? seenAuthHeader = null;
-        string? seenIdeationPayload = null;
+        string? seenTriagePayload = null;
 
         var handler = new StubHttpMessageHandler(async request =>
         {
@@ -51,15 +51,15 @@ public sealed class NightCodeForgeCompanionClientTests
                 """);
             }
 
-            if (request.RequestUri.AbsolutePath == "/api/companion/workspaces/3/ideation")
+            if (request.RequestUri.AbsolutePath == "/api/companion/workspaces/3/triage")
             {
-                seenIdeationPayload = await request.Content!.ReadAsStringAsync();
+                seenTriagePayload = await request.Content!.ReadAsStringAsync();
                 return JsonResponse("""
                 {
-                  "conversationId": 42,
+                  "draftId": "7f9c2b1e4a8d",
                   "workspaceId": 3,
                   "title": "Assay Report",
-                  "ideationUrl": "/w/3/ideation?conversationId=42"
+                  "triageUrl": "/w/3/triage?draftId=7f9c2b1e4a8d"
                 }
                 """, HttpStatusCode.Created);
             }
@@ -85,16 +85,18 @@ public sealed class NightCodeForgeCompanionClientTests
         Assert.Single(workspaces);
         Assert.Equal("🧪 NightCodeAssay", workspaces[0].DisplayLabel);
 
-        var ideation = await client.CreateIdeationSessionAsync(3, new CreateCompanionIdeationRequestDto
+        var triage = await client.CreateTriageSessionAsync(3, new CreateCompanionTriageRequestDto
         {
             Title = "Exploratory Session",
             ReportMarkdown = "# Report",
+            BaseBranch = "main",
             SessionDirectoryPath = @"C:\sessions\1"
         });
-        Assert.NotNull(ideation);
-        Assert.Equal(42, ideation!.ConversationId);
-        Assert.Equal("/w/3/ideation?conversationId=42", ideation.EffectiveUrl);
-        Assert.Contains("# Report", seenIdeationPayload);
+        Assert.NotNull(triage);
+        Assert.Equal("7f9c2b1e4a8d", triage!.DraftId);
+        Assert.Equal("/w/3/triage?draftId=7f9c2b1e4a8d", triage.EffectiveUrl);
+        Assert.Contains("# Report", seenTriagePayload);
+        Assert.Contains("\"baseBranch\":\"main\"", seenTriagePayload);
     }
 
     [Fact]
@@ -113,7 +115,7 @@ public sealed class NightCodeForgeCompanionClientTests
         Assert.Null(await client.GetConfigAsync());
         Assert.False(client.IsConnected);
         Assert.Empty(await client.GetWorkspacesAsync());
-        Assert.Null(await client.CreateIdeationSessionAsync(1, new CreateCompanionIdeationRequestDto { ReportMarkdown = "# Test" }));
+        Assert.Null(await client.CreateTriageSessionAsync(1, new CreateCompanionTriageRequestDto { ReportMarkdown = "# Test" }));
     }
 
     private static HttpResponseMessage JsonResponse(string json, HttpStatusCode status = HttpStatusCode.OK) =>

@@ -55,7 +55,7 @@ jobs:
       - name: Publish Portable Native AOT (win-x64)
         shell: pwsh
         run: |
-          dotnet publish src/NightCodeAssay.App/NightCodeAssay.App.csproj -p:PublishProfile=win-x64-aot -p:Version=${{ env.VERSION }} -o ./dist/NightCodeAssay-win-x64
+          dotnet publish src/NightCodeAssay.App/NightCodeAssay.App.csproj -p:PublishAot=true -r win-x64 -p:StripSymbols=true -p:DebugType=none -p:DebugSymbols=false -p:Version=${{ env.VERSION }} -o ./dist/NightCodeAssay-win-x64
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           Remove-Item -Path ./dist/NightCodeAssay-win-x64/*.pdb -Force -ErrorAction SilentlyContinue
           Copy-Item README.md, LICENSE -Destination ./dist/NightCodeAssay-win-x64/
