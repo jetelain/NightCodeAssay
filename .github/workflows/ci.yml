@@ -1,0 +1,102 @@
+name: CI & Release
+
+on:
+  push:
+    branches:
+      - main
+    tags:
+      - 'v*.*.*'
+  pull_request:
+    branches:
+      - main
+
+permissions:
+  contents: write
+  id-token: write
+
+jobs:
+  build:
+    name: Build, Test, Pack & Publish
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup .NET 10 SDK
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+
+      - name: Extract version number
+        shell: bash
+        run: |
+          if [[ "${{ github.ref }}" == refs/tags/v* ]]; then
+            RAW_TAG="${{ github.ref_name }}"
+            VERSION="${RAW_TAG#v}"
+          else
+            VERSION="0.1.0-preview.${{ github.run_number }}"
+          fi
+          echo "VERSION=${VERSION}" >> "$GITHUB_ENV"
+          echo "Building version: ${VERSION}"
+
+      - name: Restore dependencies
+        run: dotnet restore NightCodeAssay.slnx
+
+      - name: Build
+        run: dotnet build NightCodeAssay.slnx -c Release --no-restore -p:Version=${{ env.VERSION }}
+
+      - name: Test
+        run: dotnet test NightCodeAssay.slnx -c Release --no-build --verbosity normal
+
+      - name: Pack .NET Tool
+        run: dotnet pack NightCodeAssay.slnx -c Release --no-build -p:Version=${{ env.VERSION }} -o ./artifacts/nuget
+
+      - name: Publish Portable Native AOT (win-x64)
+        shell: pwsh
+        run: |
+          dotnet publish src/NightCodeAssay.App/NightCodeAssay.App.csproj -p:PublishProfile=win-x64-aot -p:Version=${{ env.VERSION }} -o ./dist/NightCodeAssay-win-x64
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          Remove-Item -Path ./dist/NightCodeAssay-win-x64/*.pdb -Force -ErrorAction SilentlyContinue
+          Copy-Item README.md, LICENSE -Destination ./dist/NightCodeAssay-win-x64/
+          New-Item -ItemType Directory -Force -Path ./artifacts/portable | Out-Null
+          Compress-Archive -Path ./dist/NightCodeAssay-win-x64/* -DestinationPath ./artifacts/portable/NightCodeAssay-win-x64.zip -Force
+
+      - name: Upload NuGet tool artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: nuget-package
+          path: ./artifacts/nuget/*.nupkg
+          if-no-files-found: error
+
+      - name: Upload portable executable artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: NightCodeAssay-win-x64
+          path: ./artifacts/portable/NightCodeAssay-win-x64.zip
+          if-no-files-found: error
+
+      - name: NuGet login
+        if: startsWith(github.ref, 'refs/tags/v')
+        id: login
+        uses: NuGet/login@v1
+        with:
+          user: ${{ secrets.NUGET_USER || 'jetelain' }}
+
+      - name: Push .NET Tool to nuget.org
+        if: startsWith(github.ref, 'refs/tags/v')
+        shell: pwsh
+        run: |
+          dotnet nuget push ./artifacts/nuget/*.nupkg `
+            --api-key "${{ steps.login.outputs.NUGET_API_KEY }}" `
+            --source https://api.nuget.org/v3/index.json `
+            --skip-duplicate
+
+      - name: Create GitHub Release
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v2
+        with:
+          generate_release_notes: true
+          files: |
+            ./artifacts/portable/NightCodeAssay-win-x64.zip
+            ./artifacts/nuget/*.nupkg

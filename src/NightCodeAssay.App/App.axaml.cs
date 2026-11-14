@@ -292,9 +292,28 @@ public partial class App : Application
 
     internal static ServiceProvider BuildServiceProvider()
     {
-        var configuration = new ConfigurationBuilder()
+        var configBuilder = new ConfigurationBuilder()
             .SetBasePath(AppContext.BaseDirectory)
-            .AddJsonFile("appsettings.json", optional: true, reloadOnChange: false)
+            .AddJsonFile("appsettings.json", optional: true, reloadOnChange: false);
+
+        var localAppData = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
+        if (!string.IsNullOrWhiteSpace(localAppData))
+        {
+            var userConfigPath = Path.Combine(localAppData, "NightCodeAssay", "appsettings.json");
+            configBuilder.AddJsonFile(userConfigPath, optional: true, reloadOnChange: false);
+        }
+
+        var currentDirConfigPath = Path.Combine(Environment.CurrentDirectory, "appsettings.json");
+        var baseDirConfigPath = Path.Combine(AppContext.BaseDirectory, "appsettings.json");
+        if (!string.Equals(
+                Path.GetFullPath(currentDirConfigPath),
+                Path.GetFullPath(baseDirConfigPath),
+                StringComparison.OrdinalIgnoreCase))
+        {
+            configBuilder.AddJsonFile(currentDirConfigPath, optional: true, reloadOnChange: false);
+        }
+
+        var configuration = configBuilder
             .AddEnvironmentVariables("NIGHTCODEASSAY_")
             .Build();
 

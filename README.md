@@ -37,10 +37,23 @@ During manual exploratory testing of Web or Desktop applications, NightCode Assa
 
 ## Getting Started
 
+### Installation
+
+- **Option 1 — Portable Executable (End Users / QA):**
+  Download `NightCodeAssay-win-x64.zip` from [GitHub Releases](https://github.com/jetelain/NightCodeAssay/releases), extract it, and run `NightCodeAssay.App.exe` (no .NET runtime installation required).
+- **Option 2 — .NET Global Tool (Developers):**
+  Install via the .NET 10 SDK and launch from any directory:
+  ```powershell
+  dotnet tool install -g NightCodeForge.Assay
+  nightcodeassay
+  ```
+- **Option 3 — Build & Publish Locally:**
+  Requires the [.NET 10 SDK](https://dotnet.microsoft.com/download/dotnet/10.0) (plus the Desktop C++ workload on Windows for Native AOT publishing).
+
 ### Prerequisites
 
-- [.NET 10 SDK](https://dotnet.microsoft.com/download/dotnet/10.0)
 - Windows 10/11 (recommended for Win32 screen capture, global hotkeys, DPAPI key unwrapping, and Event Log collection)
+- *(Optional)* [.NET 10 SDK](https://dotnet.microsoft.com/download/dotnet/10.0) when running from source or installing as a `.NET Tool`
 - *(Optional)* [Ollama](https://ollama.com/) with a vision model (e.g., `ollama pull llama3.2-vision` or `qwen2.5vl`) or an OpenAI-compatible VLM endpoint
 
 ### Build, Test & Run
@@ -54,6 +67,12 @@ dotnet test NightCodeAssay.slnx
 
 # Launch the desktop application (defaults to Standalone Mode if NightCodeForge is offline)
 dotnet run --project src/NightCodeAssay.App
+
+# Pack the .NET global tool (.nupkg)
+dotnet pack NightCodeAssay.slnx -c Release -o ./artifacts/nuget
+
+# Publish the standalone portable Native AOT executable (win-x64)
+dotnet publish src/NightCodeAssay.App/NightCodeAssay.App.csproj -p:PublishProfile=win-x64-aot
 ```
 
 ---

@@ -8,6 +8,17 @@
     <AvaloniaUseCompiledBindingsByDefault>true</AvaloniaUseCompiledBindingsByDefault>
     <IsAotCompatible>true</IsAotCompatible>
     <SuppressTrimAnalysisWarnings>true</SuppressTrimAnalysisWarnings>
+    <PackAsTool>true</PackAsTool>
+    <ToolCommandName>nightcodeassay</ToolCommandName>
+    <PackageId>NightCodeForge.Assay</PackageId>
+    <Description>Lightweight zero-VRAM exploratory testing companion for NightCodeForge and standalone QA sessions</Description>
+    <Authors>Pmad</Authors>
+    <PackageLicenseExpression>MIT</PackageLicenseExpression>
+    <PackageProjectUrl>https://github.com/jetelain/NightCodeAssay</PackageProjectUrl>
+    <RepositoryUrl>https://github.com/jetelain/NightCodeAssay</RepositoryUrl>
+    <RepositoryType>git</RepositoryType>
+    <PackageReadmeFile>README.md</PackageReadmeFile>
+    <IsPackable>true</IsPackable>
   </PropertyGroup>
 
   <ItemGroup>
@@ -31,6 +42,7 @@
   </ItemGroup>
 
   <ItemGroup>
+    <None Include="..\..\README.md" Pack="true" PackagePath="\" />
     <None Update="appsettings.json">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </None>
