@@ -93,22 +93,23 @@ dotnet publish src/NightCodeAssay.App/NightCodeAssay.App.csproj -p:PublishAot=tr
   "CdpPort": 9222,
   "SessionsDirectory": "./sessions",
   "LogFilePaths": [],
-  "ProviderTypeOverride": "Ollama",
-  "EndpointOverride": "http://localhost:11434",
-  "VisionModelIdOverride": "",
-  "OpenAiApiKeyOverride": "",
+  "OverrideNCF": false,
+  "ProviderType": "Ollama",
+  "Endpoint": "http://localhost:11434",
+  "VisionModelId": "Qwen3.8-27B:latest",
+  "OpenAiApiKey": "",
   "VlmTimeoutSeconds": 300,
   "VlmMaxRetries": 2
 }
 ```
 
-- **Local Overrides vs. Companion Config:** By default, `appsettings.json` points `ProviderTypeOverride` to `Ollama` and `EndpointOverride` to `http://localhost:11434` so **Standalone Mode** works immediately. To inherit the LLM provider and endpoint directly from NightCodeForge (`/api/companion/config`), clear `ProviderTypeOverride` and `EndpointOverride` to `""`.
+- **Offline Config vs. Companion Config (`OverrideNCF`):** `ProviderType`, `Endpoint`, `VisionModelId`, and `OpenAiApiKey` configure the VLM used in **Standalone / Offline Mode** (when NightCodeForge is unreachable). When connected to NightCodeForge (`/api/companion/config`), Assay uses NightCodeForge's provider configuration by default (`"OverrideNCF": false`). Set `"OverrideNCF": true` to apply Assay's local VLM settings even while connected to NightCodeForge.
 - **Companion Key Precedence (`DefaultKeyReader`):**
   1. Explicit `NightCodeForge:ApiKey` in `appsettings.json` (useful for remote/Tailscale instances)
   2. Explicit `NightCodeForge:ConfigDirectory` -> `<ConfigDirectory>/default-key.dat`
   3. `NIGHTCODEFORGE_HOME` environment variable -> `<NIGHTCODEFORGE_HOME>/config/default-key.dat`
   4. Standard Windows installation paths (`%LOCALAPPDATA%\Programs\NightCodeForge\config\default-key.dat`, `%LOCALAPPDATA%\NightCodeForge\config\default-key.dat`) or sibling repo (`..\NightCodeForge\src\NightCodeForge.Web\config\default-key.dat`)
-- **Environment Variable Overrides:** Any setting can also be overridden with the `NIGHTCODEASSAY_` prefix (for example `NIGHTCODEASSAY_VisionModelIdOverride=qwen2.5vl:7b`).
+- **Environment Variable Overrides:** Any setting can also be overridden with the `NIGHTCODEASSAY_` prefix (for example `NIGHTCODEASSAY_VisionModelId=qwen2.5vl:7b` or `NIGHTCODEASSAY_OverrideNCF=true`).
 
 ---
 

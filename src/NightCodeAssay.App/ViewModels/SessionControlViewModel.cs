@@ -10,6 +10,11 @@ using NightCodeAssay.Core.Services;
 
 namespace NightCodeAssay.App.ViewModels;
 
+public sealed record SessionUiCallbacks(
+    Func<Task> TriggerCaptureAsync,
+    Func<string, Task> CopyToClipboardAsync,
+    Action RequestExit);
+
 public sealed partial class SessionControlViewModel : ObservableObject
 {
     private readonly IOptions<AssayOptions> _options;
@@ -78,9 +83,7 @@ public sealed partial class SessionControlViewModel : ObservableObject
         IContextCollector contextCollector,
         IBrowserLauncherService browserLauncher,
         IGlobalHotkeyService hotkeyService,
-        Func<Task> triggerCaptureAsync,
-        Func<string, Task> copyToClipboardAsync,
-        Action requestExit)
+        SessionUiCallbacks uiCallbacks)
     {
         _options = options ?? throw new ArgumentNullException(nameof(options));
         _companionClient = companionClient ?? throw new ArgumentNullException(nameof(companionClient));
@@ -90,9 +93,10 @@ public sealed partial class SessionControlViewModel : ObservableObject
         _contextCollector = contextCollector ?? throw new ArgumentNullException(nameof(contextCollector));
         _browserLauncher = browserLauncher ?? throw new ArgumentNullException(nameof(browserLauncher));
         _hotkeyService = hotkeyService ?? throw new ArgumentNullException(nameof(hotkeyService));
-        _triggerCaptureAsync = triggerCaptureAsync ?? throw new ArgumentNullException(nameof(triggerCaptureAsync));
-        _copyToClipboardAsync = copyToClipboardAsync ?? throw new ArgumentNullException(nameof(copyToClipboardAsync));
-        _requestExit = requestExit ?? throw new ArgumentNullException(nameof(requestExit));
+        ArgumentNullException.ThrowIfNull(uiCallbacks);
+        _triggerCaptureAsync = uiCallbacks.TriggerCaptureAsync ?? throw new ArgumentNullException(nameof(uiCallbacks));
+        _copyToClipboardAsync = uiCallbacks.CopyToClipboardAsync ?? throw new ArgumentNullException(nameof(uiCallbacks));
+        _requestExit = uiCallbacks.RequestExit ?? throw new ArgumentNullException(nameof(uiCallbacks));
 
         _captureActiveWindowOnly = _options.Value.CaptureActiveWindowOnly;
 

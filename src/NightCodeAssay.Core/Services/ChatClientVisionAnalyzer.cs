@@ -178,16 +178,32 @@ public sealed class ChatClientVisionAnalyzer : IVisionAnalyzer
 
     public static ResolvedVlmConfig ResolveConfig(AssayOptions options, CompanionConfigDto? companionConfig)
     {
-        var providerType = !string.IsNullOrWhiteSpace(options.ProviderTypeOverride)
-            ? options.ProviderTypeOverride.Trim()
-            : (!string.IsNullOrWhiteSpace(companionConfig?.ProviderType) ? companionConfig.ProviderType.Trim() : "Ollama");
+        var useLocalConfig = companionConfig is null || options.OverrideNCF;
+
+        string providerType;
+        if (useLocalConfig && !string.IsNullOrWhiteSpace(options.ProviderType))
+        {
+            providerType = options.ProviderType.Trim();
+        }
+        else if (!string.IsNullOrWhiteSpace(companionConfig?.ProviderType))
+        {
+            providerType = companionConfig.ProviderType.Trim();
+        }
+        else if (!string.IsNullOrWhiteSpace(options.ProviderType))
+        {
+            providerType = options.ProviderType.Trim();
+        }
+        else
+        {
+            providerType = "Ollama";
+        }
 
         var isOpenAi = IsOpenAiCompatible(providerType);
 
         string endpoint;
-        if (!string.IsNullOrWhiteSpace(options.EndpointOverride))
+        if (useLocalConfig && !string.IsNullOrWhiteSpace(options.Endpoint))
         {
-            endpoint = options.EndpointOverride.Trim();
+            endpoint = options.Endpoint.Trim();
         }
         else if (isOpenAi && !string.IsNullOrWhiteSpace(companionConfig?.OpenAiCompatible?.Endpoint))
         {
@@ -202,17 +218,33 @@ public sealed class ChatClientVisionAnalyzer : IVisionAnalyzer
             endpoint = isOpenAi ? "https://api.openai.com/v1" : "http://localhost:11434";
         }
 
-        var modelId = !string.IsNullOrWhiteSpace(options.VisionModelIdOverride)
-            ? options.VisionModelIdOverride.Trim()
-            : (!string.IsNullOrWhiteSpace(companionConfig?.DefaultModelId)
-                ? companionConfig.DefaultModelId.Trim()
-                : (!string.IsNullOrWhiteSpace(companionConfig?.ArchitectModelId)
-                    ? companionConfig.ArchitectModelId.Trim()
-                    : DefaultVisionModelId));
+        string modelId;
+        if (useLocalConfig && !string.IsNullOrWhiteSpace(options.VisionModelId))
+        {
+            modelId = options.VisionModelId.Trim();
+        }
+        else if (!string.IsNullOrWhiteSpace(companionConfig?.DefaultModelId))
+        {
+            modelId = companionConfig.DefaultModelId.Trim();
+        }
+        else if (!string.IsNullOrWhiteSpace(companionConfig?.ArchitectModelId))
+        {
+            modelId = companionConfig.ArchitectModelId.Trim();
+        }
+        else if (!string.IsNullOrWhiteSpace(options.VisionModelId))
+        {
+            modelId = options.VisionModelId.Trim();
+        }
+        else
+        {
+            modelId = DefaultVisionModelId;
+        }
 
-        var apiKey = !string.IsNullOrWhiteSpace(options.OpenAiApiKeyOverride)
-            ? options.OpenAiApiKeyOverride.Trim()
-            : companionConfig?.OpenAiCompatible?.ApiKey?.Trim();
+        var apiKey = useLocalConfig && !string.IsNullOrWhiteSpace(options.OpenAiApiKey)
+            ? options.OpenAiApiKey.Trim()
+            : (!string.IsNullOrWhiteSpace(companionConfig?.OpenAiCompatible?.ApiKey)
+                ? companionConfig.OpenAiCompatible.ApiKey.Trim()
+                : (!string.IsNullOrWhiteSpace(options.OpenAiApiKey) ? options.OpenAiApiKey.Trim() : null));
 
         var organizationId = companionConfig?.OpenAiCompatible?.OrganizationId?.Trim();
 

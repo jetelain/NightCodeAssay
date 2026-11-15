@@ -77,9 +77,10 @@ public partial class App : Application
             contextCollector,
             browserLauncher,
             hotkeyService,
-            triggerCaptureAsync: () => TriggerQuickCaptureAsync(hideControlWindowTemporarily: true),
-            copyToClipboardAsync: CopyTextToClipboardAsync,
-            requestExit: ShutdownApplication);
+            new SessionUiCallbacks(
+                TriggerCaptureAsync: () => TriggerQuickCaptureAsync(hideControlWindowTemporarily: true),
+                CopyToClipboardAsync: CopyTextToClipboardAsync,
+                RequestExit: ShutdownApplication));
 
         _controlWindow = new SessionControlWindow
         {
@@ -393,10 +394,15 @@ public partial class App : Application
             options.LogFilePaths = paths;
         }
 
-        options.ProviderTypeOverride = configuration[nameof(AssayOptions.ProviderTypeOverride)] ?? options.ProviderTypeOverride;
-        options.EndpointOverride = configuration[nameof(AssayOptions.EndpointOverride)] ?? options.EndpointOverride;
-        options.VisionModelIdOverride = configuration[nameof(AssayOptions.VisionModelIdOverride)] ?? options.VisionModelIdOverride;
-        options.OpenAiApiKeyOverride = configuration[nameof(AssayOptions.OpenAiApiKeyOverride)] ?? options.OpenAiApiKeyOverride;
+        if (bool.TryParse(configuration[nameof(AssayOptions.OverrideNCF)], out var overrideNcf))
+        {
+            options.OverrideNCF = overrideNcf;
+        }
+
+        options.ProviderType = configuration[nameof(AssayOptions.ProviderType)] ?? options.ProviderType;
+        options.Endpoint = configuration[nameof(AssayOptions.Endpoint)] ?? options.Endpoint;
+        options.VisionModelId = configuration[nameof(AssayOptions.VisionModelId)] ?? options.VisionModelId;
+        options.OpenAiApiKey = configuration[nameof(AssayOptions.OpenAiApiKey)] ?? options.OpenAiApiKey;
 
         if (int.TryParse(configuration[nameof(AssayOptions.VlmTimeoutSeconds)], NumberStyles.Integer, CultureInfo.InvariantCulture, out var vlmTimeoutSeconds))
         {

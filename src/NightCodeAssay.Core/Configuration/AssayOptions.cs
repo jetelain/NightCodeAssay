@@ -34,13 +34,15 @@ public sealed class AssayOptions
 
     public List<string> LogFilePaths { get; set; } = [];
 
-    public string? ProviderTypeOverride { get; set; } = "Ollama";
+    public bool OverrideNCF { get; set; }
 
-    public string? EndpointOverride { get; set; } = "http://localhost:11434";
+    public string? ProviderType { get; set; } = "Ollama";
 
-    public string? VisionModelIdOverride { get; set; }
+    public string? Endpoint { get; set; } = "http://localhost:11434";
 
-    public string? OpenAiApiKeyOverride { get; set; }
+    public string? VisionModelId { get; set; }
+
+    public string? OpenAiApiKey { get; set; }
 
     public int VlmTimeoutSeconds { get; set; } = 300;
 

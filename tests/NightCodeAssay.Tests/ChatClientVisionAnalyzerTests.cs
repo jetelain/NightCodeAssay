@@ -14,7 +14,7 @@ namespace NightCodeAssay.Tests;
 public sealed class ChatClientVisionAnalyzerTests
 {
     [Fact]
-    public void ResolveConfig_UsesLocalOverridesWhenSetAndFallsBackToCompanionConfig()
+    public void ResolveConfig_UsesOfflineConfigWhenDisconnectedAndRespectsOverrideNcfWhenConnected()
     {
         var companion = new CompanionConfigDto
         {
@@ -25,34 +25,47 @@ public sealed class ChatClientVisionAnalyzerTests
             OpenAiCompatible = new CompanionOpenAiConfigDto
             {
                 Endpoint = "https://custom.openai.local/v1",
-                ApiKey = "ncf-key"
+                ApiKey = "ncf-key",
+                OrganizationId = "ncf-org"
             }
         };
 
-        var withoutOverrides = new AssayOptions
+        var offlineOptions = new AssayOptions
         {
-            ProviderTypeOverride = null,
-            EndpointOverride = null,
-            VisionModelIdOverride = null
+            OverrideNCF = false,
+            ProviderType = "OpenAiCompatible",
+            Endpoint = "https://offline.local/v1",
+            VisionModelId = "offline-vision",
+            OpenAiApiKey = "offline-key"
         };
 
-        var resolvedFromCompanion = ChatClientVisionAnalyzer.ResolveConfig(withoutOverrides, companion);
+        var resolvedOffline = ChatClientVisionAnalyzer.ResolveConfig(offlineOptions, companionConfig: null);
+        Assert.Equal("OpenAiCompatible", resolvedOffline.ProviderType);
+        Assert.Equal("https://offline.local/v1", resolvedOffline.Endpoint);
+        Assert.Equal("offline-vision", resolvedOffline.ModelId);
+        Assert.Equal("offline-key", resolvedOffline.ApiKey);
+
+        var resolvedFromCompanion = ChatClientVisionAnalyzer.ResolveConfig(offlineOptions, companion);
         Assert.Equal("OpenAiCompatible", resolvedFromCompanion.ProviderType);
         Assert.Equal("https://custom.openai.local/v1", resolvedFromCompanion.Endpoint);
         Assert.Equal("qwen2.5-vl:7b", resolvedFromCompanion.ModelId);
         Assert.Equal("ncf-key", resolvedFromCompanion.ApiKey);
+        Assert.Equal("ncf-org", resolvedFromCompanion.OrganizationId);
 
-        var withOverrides = new AssayOptions
+        var withOverrideNcf = new AssayOptions
         {
-            ProviderTypeOverride = "Ollama",
-            EndpointOverride = "http://127.0.0.1:11434",
-            VisionModelIdOverride = "llava:13b"
+            OverrideNCF = true,
+            ProviderType = "Ollama",
+            Endpoint = "http://127.0.0.1:11434",
+            VisionModelId = "llava:13b",
+            OpenAiApiKey = "override-key"
         };
 
-        var resolvedOverride = ChatClientVisionAnalyzer.ResolveConfig(withOverrides, companion);
+        var resolvedOverride = ChatClientVisionAnalyzer.ResolveConfig(withOverrideNcf, companion);
         Assert.Equal("Ollama", resolvedOverride.ProviderType);
         Assert.Equal("http://127.0.0.1:11434", resolvedOverride.Endpoint);
         Assert.Equal("llava:13b", resolvedOverride.ModelId);
+        Assert.Equal("override-key", resolvedOverride.ApiKey);
     }
 
     [Fact]
@@ -70,9 +83,9 @@ public sealed class ChatClientVisionAnalyzerTests
 
         var options = Options.Create(new AssayOptions
         {
-            ProviderTypeOverride = "Ollama",
-            EndpointOverride = "http://localhost:11434",
-            VisionModelIdOverride = "llama3.2-vision"
+            ProviderType = "Ollama",
+            Endpoint = "http://localhost:11434",
+            VisionModelId = "llama3.2-vision"
         });
 
         var analyzer = new ChatClientVisionAnalyzer(

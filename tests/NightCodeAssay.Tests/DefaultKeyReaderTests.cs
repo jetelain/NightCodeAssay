@@ -96,7 +96,8 @@ public sealed class DefaultKeyReaderTests : IDisposable
             protector: new PlainKeyProtector(),
             environmentVariableAccessor: _ => null,
             localAppDataDirectory: Path.Combine(_tempRoot, "emptyLocalAppData"),
-            baseDirectory: _tempRoot);
+            baseDirectory: _tempRoot,
+            currentDirectory: _tempRoot);
 
         Assert.Null(missingReader.ReadDefaultKey());
 
@@ -104,13 +105,55 @@ public sealed class DefaultKeyReaderTests : IDisposable
         Directory.CreateDirectory(corruptDir);
         File.WriteAllText(Path.Combine(corruptDir, "default-key.dat"), "{not-valid-json");
 
-        var corruptReader = new DefaultKeyReader(configDirectory: corruptDir, protector: new PlainKeyProtector());
+        var corruptReader = new DefaultKeyReader(
+            configDirectory: corruptDir,
+            protector: new PlainKeyProtector(),
+            environmentVariableAccessor: _ => null,
+            localAppDataDirectory: Path.Combine(_tempRoot, "emptyLocalAppData"),
+            baseDirectory: _tempRoot,
+            currentDirectory: _tempRoot);
         Assert.Null(corruptReader.ReadDefaultKey());
 
         var cryptoDir = Path.Combine(_tempRoot, "cryptoFail");
         WriteEnvelope(Path.Combine(cryptoDir, "default-key.dat"), "secret", new PlainKeyProtector());
-        var failingReader = new DefaultKeyReader(configDirectory: cryptoDir, protector: new ThrowingKeyProtector());
+        var failingReader = new DefaultKeyReader(
+            configDirectory: cryptoDir,
+            protector: new ThrowingKeyProtector(),
+            environmentVariableAccessor: _ => null,
+            localAppDataDirectory: Path.Combine(_tempRoot, "emptyLocalAppData"),
+            baseDirectory: _tempRoot,
+            currentDirectory: _tempRoot);
         Assert.Null(failingReader.ReadDefaultKey());
+    }
+
+    [Fact]
+    public void ReadDefaultKey_DiscoversKeyFileCreatedAfterConstructionInSiblingBinOutput()
+    {
+        var assayBinDir = Path.Combine(_tempRoot, "repos", "NightCodeAssay", "src", "NightCodeAssay.App", "bin", "Debug", "net10.0");
+        var forgeDebugKeyFile = Path.Combine(_tempRoot, "repos", "NightCodeForge", "src", "NightCodeForge.Web", "bin", "Debug", "net10.0", "config", "default-key.dat");
+        var envHome = Path.Combine(_tempRoot, "envHomeDelayed");
+        var envKeyFile = Path.Combine(envHome, "config", "default-key.dat");
+        Directory.CreateDirectory(assayBinDir);
+
+        var reader = new DefaultKeyReader(
+            configDirectory: null,
+            protector: new PlainKeyProtector(),
+            environmentVariableAccessor: name => name == "NIGHTCODEFORGE_HOME" ? envHome : null,
+            localAppDataDirectory: Path.Combine(_tempRoot, "emptyLocalAppData"),
+            baseDirectory: assayBinDir,
+            currentDirectory: assayBinDir);
+
+        Assert.Null(reader.ReadDefaultKey());
+
+        // NightCodeForge starts later and generates default-key.dat under bin/Debug/net10.0/config/
+        WriteEnvelope(forgeDebugKeyFile, "late-sibling-key", new PlainKeyProtector());
+        Assert.Equal(forgeDebugKeyFile, reader.KeyFilePath);
+        Assert.Equal("late-sibling-key", reader.ReadDefaultKey());
+
+        // Higher-priority NIGHTCODEFORGE_HOME file created later also takes precedence dynamically
+        WriteEnvelope(envKeyFile, "late-env-key", new PlainKeyProtector());
+        Assert.Equal(envKeyFile, reader.KeyFilePath);
+        Assert.Equal("late-env-key", reader.ReadDefaultKey());
     }
 
     [Fact]
