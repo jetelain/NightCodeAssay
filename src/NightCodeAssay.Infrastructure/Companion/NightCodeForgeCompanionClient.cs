@@ -1,4 +1,3 @@
-using System.Net.Http.Headers;
 using System.Net.Http.Json;
 using System.Text.Json;
 using Microsoft.Extensions.Logging;
@@ -6,30 +5,26 @@ using Microsoft.Extensions.Options;
 using NightCodeAssay.Core.Configuration;
 using NightCodeAssay.Core.Interfaces;
 using NightCodeAssay.Core.Models;
-using NightCodeAssay.Core.Security;
 
 namespace NightCodeAssay.Infrastructure.Companion;
 
 /// <summary>
-/// HTTP client for NightCodeForge's <c>/api/companion/*</c> endpoints, authenticating via
-/// <see cref="IDefaultKeyReader"/> and failing gracefully when NightCodeForge is offline.
+/// HTTP client for NightCodeForge's <c>/api/companion/*</c> endpoints, failing gracefully when NightCodeForge is offline.
+/// Authentication headers are attached by <c>Pmad.LocalApi.Client.LocalApiKeyDelegatingHandler</c>.
 /// </summary>
 public sealed class NightCodeForgeCompanionClient : INightCodeForgeClient
 {
     private readonly HttpClient _httpClient;
     private readonly IOptions<AssayOptions> _options;
-    private readonly IDefaultKeyReader _defaultKeyReader;
     private readonly ILogger<NightCodeForgeCompanionClient> _logger;
 
     public NightCodeForgeCompanionClient(
         HttpClient httpClient,
         IOptions<AssayOptions> options,
-        IDefaultKeyReader defaultKeyReader,
         ILogger<NightCodeForgeCompanionClient> logger)
     {
         _httpClient = httpClient ?? throw new ArgumentNullException(nameof(httpClient));
         _options = options ?? throw new ArgumentNullException(nameof(options));
-        _defaultKeyReader = defaultKeyReader ?? throw new ArgumentNullException(nameof(defaultKeyReader));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
     }
 
@@ -135,14 +130,6 @@ public sealed class NightCodeForgeCompanionClient : INightCodeForgeClient
     private HttpRequestMessage CreateRequest(HttpMethod method, string relativePath)
     {
         var baseUrl = _options.Value.GetEffectiveNightCodeForgeUrl();
-        var request = new HttpRequestMessage(method, $"{baseUrl}{relativePath}");
-
-        var key = _defaultKeyReader.ReadDefaultKey();
-        if (!string.IsNullOrWhiteSpace(key))
-        {
-            request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", key);
-        }
-
-        return request;
+        return new HttpRequestMessage(method, $"{baseUrl}{relativePath}");
     }
 }

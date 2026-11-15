@@ -11,7 +11,7 @@ During manual exploratory testing of Web or Desktop applications, NightCode Assa
 - **Zero-VRAM Software Rendering:** Configures Avalonia with `Win32RenderingMode.Software` (`X11RenderingMode.Software` on Linux) so Assay uses **0 MB of GPU VRAM** and never competes with local VLM/LLM inference.
 - **Standalone & Companion Modes:**
   - **Standalone Mode (`<Unlinked / Standalone>`):** Works immediately out of the box without NightCodeForge running. Sessions, annotated screenshots (`assets/capture_001.png`), and `report.md` are saved locally under `./sessions/YYYY-MM-DD_HH-mm/`.
-  - **NightCodeForge Companion Mode:** Automatically discovers NightCodeForge's DPAPI-protected `default-key.dat` (`DefaultKeyReader`), connects to `/api/companion/config` and `/api/companion/workspaces`, and enables 1-click **Send to Triage** (`POST /api/companion/workspaces/{id}/triage`).
+  - **NightCodeForge Companion Mode:** Automatically discovers NightCodeForge's DPAPI-protected `default-key.dat` via `Pmad.LocalApi.Security` (`DefaultKeyReader`), authenticates requests via `Pmad.LocalApi.Client` (`LocalApiKeyDelegatingHandler`) with automatic key-rotation retry, connects to `/api/companion/config` and `/api/companion/workspaces`, and enables 1-click **Send to Triage** (`POST /api/companion/workspaces/{id}/triage`).
 - **On-the-Fly Capture Overlay (`Ctrl+Alt+S`):**
   - Captures the desktop or active window **before** showing any overlay UI.
   - Drag the header bar or modal border to move the overlay out of the way and inspect content underneath.
@@ -29,8 +29,8 @@ During manual exploratory testing of Web or Desktop applications, NightCode Assa
 
 ## Project Structure
 
-- `src/NightCodeAssay.Core`: Configuration (`AssayOptions`), DPAPI/Plain `DefaultKeyReader`, domain models, `IReportWriter` (`ReportWriter`), `IVisionAnalyzer` (`ChatClientVisionAnalyzer`), and `CapturePipelineService`.
-- `src/NightCodeAssay.Infrastructure`: Win32 screen capture & SkiaSharp annotation (`Win32ScreenCaptureService`), Win32 `RegisterHotKey` listener (`GlobalHotkeyService`), Win32 foreground/EventLog collector, CDP WebSocket ring-buffer listener, workspace log tailer, and `NightCodeForgeCompanionClient`.
+- `src/NightCodeAssay.Core`: Configuration (`AssayOptions`), `NightCodeForgeKeyReader` (wrapping `Pmad.LocalApi.Security.DefaultKeyReader`), domain models, `IReportWriter` (`ReportWriter`), `IVisionAnalyzer` (`ChatClientVisionAnalyzer`), and `CapturePipelineService`.
+- `src/NightCodeAssay.Infrastructure`: Win32 screen capture & SkiaSharp annotation (`Win32ScreenCaptureService`), Win32 `RegisterHotKey` listener (`GlobalHotkeyService`), Win32 foreground/EventLog collector, CDP WebSocket ring-buffer listener, workspace log tailer, and `NightCodeForgeCompanionClient` (authenticated via `Pmad.LocalApi.Client`).
 - `src/NightCodeAssay.App`: Avalonia desktop application with System Tray icon, Session Control Window, and borderless topmost Quick Capture floating modal.
 - `tests/NightCodeAssay.Tests`: xUnit tests covering key resolution, Markdown report generation, log tailing, VLM fallback, companion client serialization, CDP parsing, and standalone end-to-end capture pipeline.
 
@@ -104,7 +104,7 @@ dotnet publish src/NightCodeAssay.App/NightCodeAssay.App.csproj -p:PublishAot=tr
 ```
 
 - **Offline Config vs. Companion Config (`OverrideNCF`):** `ProviderType`, `Endpoint`, `VisionModelId`, and `OpenAiApiKey` configure the VLM used in **Standalone / Offline Mode** (when NightCodeForge is unreachable). When connected to NightCodeForge (`/api/companion/config`), Assay uses NightCodeForge's provider configuration by default (`"OverrideNCF": false`). Set `"OverrideNCF": true` to apply Assay's local VLM settings even while connected to NightCodeForge.
-- **Companion Key Precedence (`DefaultKeyReader`):**
+- **Companion Key Precedence (`NightCodeForgeKeyReader` / `Pmad.LocalApi.Security.DefaultKeyReader`):**
   1. Explicit `NightCodeForge:ApiKey` in `appsettings.json` (useful for remote/Tailscale instances)
   2. Explicit `NightCodeForge:ConfigDirectory` -> `<ConfigDirectory>/default-key.dat`
   3. `NIGHTCODEFORGE_HOME` environment variable -> `<NIGHTCODEFORGE_HOME>/config/default-key.dat`

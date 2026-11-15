@@ -4,8 +4,9 @@ using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 using NightCodeAssay.Core.Configuration;
 using NightCodeAssay.Core.Models;
-using NightCodeAssay.Core.Security;
 using NightCodeAssay.Infrastructure.Companion;
+using Pmad.LocalApi.Client;
+using Pmad.LocalApi.Security;
 
 namespace NightCodeAssay.Tests;
 
@@ -67,11 +68,14 @@ public sealed class NightCodeForgeCompanionClientTests
             return new HttpResponseMessage(HttpStatusCode.NotFound);
         });
 
-        using var httpClient = new HttpClient(handler);
+        using var authHandler = new LocalApiKeyDelegatingHandler(new FixedKeyReader("test-secret-key"))
+        {
+            InnerHandler = handler
+        };
+        using var httpClient = new HttpClient(authHandler);
         var client = new NightCodeForgeCompanionClient(
             httpClient,
             Options.Create(new AssayOptions { NightCodeForgeUrl = "http://localhost:5270" }),
-            new FixedKeyReader("test-secret-key"),
             NullLogger<NightCodeForgeCompanionClient>.Instance);
 
         var config = await client.GetConfigAsync();
@@ -105,17 +109,68 @@ public sealed class NightCodeForgeCompanionClientTests
         var offlineHandler = new StubHttpMessageHandler(_ =>
             throw new HttpRequestException("Connection refused"));
 
-        using var httpClient = new HttpClient(offlineHandler);
+        using var authHandler = new LocalApiKeyDelegatingHandler(new FixedKeyReader(null))
+        {
+            InnerHandler = offlineHandler
+        };
+        using var httpClient = new HttpClient(authHandler);
         var client = new NightCodeForgeCompanionClient(
             httpClient,
             Options.Create(new AssayOptions { NightCodeForgeUrl = "http://localhost:5270" }),
-            new FixedKeyReader(null),
             NullLogger<NightCodeForgeCompanionClient>.Instance);
 
         Assert.Null(await client.GetConfigAsync());
         Assert.False(client.IsConnected);
         Assert.Empty(await client.GetWorkspacesAsync());
         Assert.Null(await client.CreateTriageSessionAsync(1, new CreateCompanionTriageRequestDto { ReportMarkdown = "# Test" }));
+    }
+
+    [Fact]
+    public async Task UnauthorizedResponse_RetriesOnceWithRotatedKeyAndSucceeds()
+    {
+        var seenAuthHeaders = new List<string?>();
+        var keyReader = new RotatingKeyReader("stale-key", "rotated-key");
+
+        var handler = new StubHttpMessageHandler(request =>
+        {
+            var auth = request.Headers.Authorization?.ToString();
+            seenAuthHeaders.Add(auth);
+
+            if (auth == "Bearer stale-key")
+            {
+                return Task.FromResult(new HttpResponseMessage(HttpStatusCode.Unauthorized));
+            }
+
+            if (auth == "Bearer rotated-key" && request.RequestUri!.AbsolutePath == "/api/companion/config")
+            {
+                return Task.FromResult(JsonResponse("""
+                {
+                  "providerType": "Ollama",
+                  "endpoint": "http://localhost:11434",
+                  "defaultModelId": "qwen2.5vl:7b"
+                }
+                """));
+            }
+
+            return Task.FromResult(new HttpResponseMessage(HttpStatusCode.NotFound));
+        });
+
+        using var authHandler = new LocalApiKeyDelegatingHandler(keyReader)
+        {
+            InnerHandler = handler
+        };
+        using var httpClient = new HttpClient(authHandler);
+        var client = new NightCodeForgeCompanionClient(
+            httpClient,
+            Options.Create(new AssayOptions { NightCodeForgeUrl = "http://localhost:5270" }),
+            NullLogger<NightCodeForgeCompanionClient>.Instance);
+
+        var config = await client.GetConfigAsync();
+
+        Assert.True(client.IsConnected);
+        Assert.NotNull(config);
+        Assert.Equal("qwen2.5vl:7b", config!.DefaultModelId);
+        Assert.Equal(["Bearer stale-key", "Bearer rotated-key"], seenAuthHeaders);
     }
 
     private static HttpResponseMessage JsonResponse(string json, HttpStatusCode status = HttpStatusCode.OK) =>
@@ -133,6 +188,23 @@ public sealed class NightCodeForgeCompanionClientTests
         public string KeyFilePath => string.Empty;
 
         public string? ReadDefaultKey() => _key;
+    }
+
+    private sealed class RotatingKeyReader : IDefaultKeyReader
+    {
+        private readonly string[] _keys;
+        private int _index;
+
+        public RotatingKeyReader(params string[] keys) => _keys = keys;
+
+        public string KeyFilePath => string.Empty;
+
+        public string? ReadDefaultKey()
+        {
+            var idx = Math.Min(_index, _keys.Length - 1);
+            _index++;
+            return _keys[idx];
+        }
     }
 
     private sealed class StubHttpMessageHandler : HttpMessageHandler

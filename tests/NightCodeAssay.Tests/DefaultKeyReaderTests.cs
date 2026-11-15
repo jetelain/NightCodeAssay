@@ -5,6 +5,7 @@ using Microsoft.Extensions.DependencyInjection;
 using NightCodeAssay.Core.Interfaces;
 using NightCodeAssay.Core.Security;
 using NightCodeAssay.Core.Services;
+using Pmad.LocalApi.Security;
 
 namespace NightCodeAssay.Tests;
 
@@ -24,7 +25,7 @@ public sealed class DefaultKeyReaderTests : IDisposable
         var configDir = Path.Combine(_tempRoot, "explicit");
         WriteEnvelope(Path.Combine(configDir, "default-key.dat"), "file-key-123", new PlainKeyProtector());
 
-        var reader = new DefaultKeyReader(
+        var reader = NightCodeForgeKeyReader.Create(
             explicitApiKey: "explicit-remote-key",
             configDirectory: configDir,
             protector: new PlainKeyProtector());
@@ -43,7 +44,7 @@ public sealed class DefaultKeyReaderTests : IDisposable
         WriteEnvelope(Path.Combine(envHome, "config", "default-key.dat"), "from-env", new PlainKeyProtector());
         WriteEnvelope(Path.Combine(localAppData, "Programs", "NightCodeForge", "config", "default-key.dat"), "from-appdata", new PlainKeyProtector());
 
-        var reader = new DefaultKeyReader(
+        var reader = NightCodeForgeKeyReader.Create(
             configDirectory: explicitDir,
             protector: new PlainKeyProtector(),
             environmentVariableAccessor: name => name == "NIGHTCODEFORGE_HOME" ? envHome : null,
@@ -63,7 +64,7 @@ public sealed class DefaultKeyReaderTests : IDisposable
         WriteEnvelope(Path.Combine(envHome, "config", "default-key.dat"), "from-env", new PlainKeyProtector());
         WriteEnvelope(Path.Combine(localAppData, "Programs", "NightCodeForge", "config", "default-key.dat"), "from-appdata", new PlainKeyProtector());
 
-        var reader = new DefaultKeyReader(
+        var reader = NightCodeForgeKeyReader.Create(
             configDirectory: Path.Combine(_tempRoot, "missing-dir"),
             protector: new PlainKeyProtector(),
             environmentVariableAccessor: name => name == "NIGHTCODEFORGE_HOME" ? envHome : null,
@@ -81,7 +82,7 @@ public sealed class DefaultKeyReaderTests : IDisposable
         var keyFile = Path.Combine(configDir, "default-key.dat");
         WriteEnvelope(keyFile, "initial-key", new PlainKeyProtector());
 
-        var reader = new DefaultKeyReader(configDirectory: configDir, protector: new PlainKeyProtector());
+        var reader = NightCodeForgeKeyReader.Create(configDirectory: configDir, protector: new PlainKeyProtector());
         Assert.Equal("initial-key", reader.ReadDefaultKey());
 
         WriteEnvelope(keyFile, "rotated-key", new PlainKeyProtector());
@@ -91,7 +92,7 @@ public sealed class DefaultKeyReaderTests : IDisposable
     [Fact]
     public void ReadDefaultKey_MissingOrCorruptOrUnwrappableReturnsNullWithoutThrowing()
     {
-        var missingReader = new DefaultKeyReader(
+        var missingReader = NightCodeForgeKeyReader.Create(
             configDirectory: Path.Combine(_tempRoot, "nonexistent"),
             protector: new PlainKeyProtector(),
             environmentVariableAccessor: _ => null,
@@ -105,7 +106,7 @@ public sealed class DefaultKeyReaderTests : IDisposable
         Directory.CreateDirectory(corruptDir);
         File.WriteAllText(Path.Combine(corruptDir, "default-key.dat"), "{not-valid-json");
 
-        var corruptReader = new DefaultKeyReader(
+        var corruptReader = NightCodeForgeKeyReader.Create(
             configDirectory: corruptDir,
             protector: new PlainKeyProtector(),
             environmentVariableAccessor: _ => null,
@@ -116,7 +117,7 @@ public sealed class DefaultKeyReaderTests : IDisposable
 
         var cryptoDir = Path.Combine(_tempRoot, "cryptoFail");
         WriteEnvelope(Path.Combine(cryptoDir, "default-key.dat"), "secret", new PlainKeyProtector());
-        var failingReader = new DefaultKeyReader(
+        var failingReader = NightCodeForgeKeyReader.Create(
             configDirectory: cryptoDir,
             protector: new ThrowingKeyProtector(),
             environmentVariableAccessor: _ => null,
@@ -135,7 +136,7 @@ public sealed class DefaultKeyReaderTests : IDisposable
         var envKeyFile = Path.Combine(envHome, "config", "default-key.dat");
         Directory.CreateDirectory(assayBinDir);
 
-        var reader = new DefaultKeyReader(
+        var reader = NightCodeForgeKeyReader.Create(
             configDirectory: null,
             protector: new PlainKeyProtector(),
             environmentVariableAccessor: name => name == "NIGHTCODEFORGE_HOME" ? envHome : null,

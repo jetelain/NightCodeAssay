@@ -326,9 +326,8 @@ public partial class App : Application
         });
 
         services.Configure<AssayOptions>(options => BindAssayOptions(configuration, options));
-        services.AddSingleton<IKeyProtector>(_ =>
-            OperatingSystem.IsWindows() ? new DpapiKeyProtector() : new PlainKeyProtector());
-        services.AddSingleton<IDefaultKeyReader, DefaultKeyReader>();
+        services.AddLocalApiDefaultKeyReader(sp =>
+            NightCodeForgeKeyReader.Create(sp.GetRequiredService<IOptions<AssayOptions>>().Value));
 
         services.AddSingleton<IScreenCaptureService, Win32ScreenCaptureService>();
         services.AddSingleton<IGlobalHotkeyService, GlobalHotkeyService>();
@@ -340,7 +339,8 @@ public partial class App : Application
         services.AddSingleton<WorkspaceLogTailer>();
         services.AddHttpClient<CdpContextCollector>();
         services.AddSingleton<IContextCollector, HybridContextCollector>();
-        services.AddHttpClient<INightCodeForgeClient, NightCodeForgeCompanionClient>();
+        services.AddHttpClient<INightCodeForgeClient, NightCodeForgeCompanionClient>()
+            .AddLocalApiKeyHandler();
 
         services.AddSingleton<IVisionAnalyzer, ChatClientVisionAnalyzer>();
         services.AddSingleton<IReportWriter, ReportWriter>();

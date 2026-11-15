@@ -1,55 +1,34 @@
-using System.Text.Json;
-using Microsoft.Extensions.Options;
 using NightCodeAssay.Core.Configuration;
+using Pmad.LocalApi.Security;
 
 namespace NightCodeAssay.Core.Security;
 
 /// <summary>
-/// Read-only access to NightCodeForge's locally persisted default API key (<c>default-key.dat</c>).
-/// </summary>
-public interface IDefaultKeyReader
-{
-    /// <summary>
-    /// The resolved on-disk path of the key envelope (diagnostic; the file may not exist).
-    /// </summary>
-    string KeyFilePath { get; }
-
-    /// <summary>
-    /// Resolves the active API key (explicit override first, otherwise reading and unwrapping
-    /// <c>default-key.dat</c>). Fails safe: returns <c>null</c> and never throws when absent or corrupt.
-    /// </summary>
-    string? ReadDefaultKey();
-}
-
-/// <summary>
-/// Resolves NightCodeForge's companion API key using the documented precedence:
+/// Creates the <see cref="IDefaultKeyReader"/> configured for NightCodeForge's
+/// <c>default-key.dat</c> discovery precedence:
 /// <list type="number">
 /// <item>Explicit <c>NightCodeForge:ApiKey</c> in <c>appsettings.json</c>;</item>
 /// <item>Explicit <c>NightCodeForge:ConfigDirectory</c> -&gt; <c>&lt;ConfigDirectory&gt;/default-key.dat</c> (or <c>config/default-key.dat</c>);</item>
 /// <item><c>NIGHTCODEFORGE_HOME</c> environment variable -&gt; <c>&lt;NIGHTCODEFORGE_HOME&gt;/config/default-key.dat</c>;</item>
-/// <item>Standard Windows installation path (<c>%LOCALAPPDATA%\Programs\NightCodeForge\config\default-key.dat</c>, <c>%LOCALAPPDATA%\NightCodeForge\config\default-key.dat</c>) or sibling development repository (<c>..\NightCodeForge\src\NightCodeForge.Web\bin\Debug\net10.0\config\default-key.dat</c>, <c>..\NightCodeForge\src\NightCodeForge.Web\bin\Release\net10.0\config\default-key.dat</c>, <c>..\NightCodeForge\src\NightCodeForge.Web\config\default-key.dat</c>).</item>
+/// <item>Standard installation path (<c>%LOCALAPPDATA%\Programs\NightCodeForge\config\default-key.dat</c>, <c>%LOCALAPPDATA%\NightCodeForge\config\default-key.dat</c>, or <c>~/.nightcodeforge/config/default-key.dat</c>) or sibling development repository (<c>..\NightCodeForge\src\NightCodeForge.Web\bin\Debug\net10.0\config\default-key.dat</c>, <c>..\NightCodeForge\src\NightCodeForge.Web\bin\Release\net10.0\config\default-key.dat</c>, <c>..\NightCodeForge\src\NightCodeForge.Web\config\default-key.dat</c>).</item>
 /// </list>
 /// </summary>
-public sealed class DefaultKeyReader : IDefaultKeyReader
+public static class NightCodeForgeKeyReader
 {
     private const string KeyFileName = "default-key.dat";
     private const string HomeEnvironmentVariable = "NIGHTCODEFORGE_HOME";
 
-    private readonly string? _explicitApiKey;
-    private readonly IKeyProtector _keyProtector;
-    private readonly IReadOnlyList<string> _candidates;
-
-    public DefaultKeyReader(
-        IOptions<AssayOptions> options,
-        IKeyProtector protector)
-        : this(
-            explicitApiKey: (options ?? throw new ArgumentNullException(nameof(options))).Value.GetExplicitApiKey(),
-            configDirectory: options.Value.GetExplicitConfigDirectory(),
-            protector: protector ?? throw new ArgumentNullException(nameof(protector)))
+    public static IDefaultKeyReader Create(AssayOptions options, IKeyProtector? protector = null)
     {
+        ArgumentNullException.ThrowIfNull(options);
+
+        return Create(
+            explicitApiKey: options.GetExplicitApiKey(),
+            configDirectory: options.GetExplicitConfigDirectory(),
+            protector: protector);
     }
 
-    internal DefaultKeyReader(
+    internal static IDefaultKeyReader Create(
         string? explicitApiKey = null,
         string? configDirectory = null,
         IKeyProtector? protector = null,
@@ -58,74 +37,36 @@ public sealed class DefaultKeyReader : IDefaultKeyReader
         string? baseDirectory = null,
         string? currentDirectory = null)
     {
-        _explicitApiKey = string.IsNullOrWhiteSpace(explicitApiKey) ? null : explicitApiKey.Trim();
-        _keyProtector = protector ?? CreatePlatformProtector();
+        if (localAppDataDirectory is null)
+        {
+            return DefaultKeyReader.CreateForApp(
+                appDirectoryName: Path.Combine("Programs", "NightCodeForge"),
+                unixDotDirectoryName: "nightcodeforge",
+                homeEnvironmentVariable: HomeEnvironmentVariable,
+                configDirectory: configDirectory,
+                protector: protector,
+                explicitApiKey: explicitApiKey,
+                environmentVariableAccessor: environmentVariableAccessor,
+                additionalCandidates: BuildAdditionalCandidates(
+                    localAppData: null,
+                    baseDirectory: baseDirectory ?? AppContext.BaseDirectory,
+                    currentDirectory: currentDirectory ?? Environment.CurrentDirectory));
+        }
 
-        var getEnv = environmentVariableAccessor ?? Environment.GetEnvironmentVariable;
-        _candidates = BuildCandidates(
-            configDirectory,
-            getEnv(HomeEnvironmentVariable),
-            localAppDataDirectory ?? Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
-            baseDirectory ?? AppContext.BaseDirectory,
-            currentDirectory ?? Environment.CurrentDirectory);
+        var candidates = BuildExplicitCandidates(
+            configDirectory: configDirectory,
+            environmentVariableAccessor: environmentVariableAccessor ?? Environment.GetEnvironmentVariable,
+            localAppDataDirectory: localAppDataDirectory,
+            baseDirectory: baseDirectory ?? AppContext.BaseDirectory,
+            currentDirectory: currentDirectory ?? Environment.CurrentDirectory);
+
+        return new DefaultKeyReader(candidates, protector, explicitApiKey);
     }
 
-    public string KeyFilePath => ResolveKeyFilePath();
-
-    public string? ReadDefaultKey()
-    {
-        if (!string.IsNullOrWhiteSpace(_explicitApiKey))
-        {
-            return _explicitApiKey;
-        }
-
-        try
-        {
-            var keyFilePath = ResolveKeyFilePath();
-            if (string.IsNullOrWhiteSpace(keyFilePath) || !File.Exists(keyFilePath))
-            {
-                return null;
-            }
-
-            var protectedBytes = File.ReadAllBytes(keyFilePath);
-            var envelopeBytes = _keyProtector.Unprotect(protectedBytes);
-            using var document = JsonDocument.Parse(envelopeBytes);
-
-            if (document.RootElement.ValueKind != JsonValueKind.Object ||
-                !document.RootElement.TryGetProperty("key", out var keyElement) ||
-                keyElement.ValueKind != JsonValueKind.String)
-            {
-                return null;
-            }
-
-            var key = keyElement.GetString();
-            return string.IsNullOrWhiteSpace(key) ? null : key.Trim();
-        }
-        catch (Exception)
-        {
-            // Fails safe by contract: missing/unreadable file, unwrappable DPAPI blob,
-            // or malformed envelope returns null so Assay falls back to standalone mode.
-            return null;
-        }
-    }
-
-    private string ResolveKeyFilePath()
-    {
-        foreach (var candidate in _candidates)
-        {
-            if (File.Exists(candidate))
-            {
-                return candidate;
-            }
-        }
-
-        return _candidates.Count > 0 ? _candidates[0] : string.Empty;
-    }
-
-    private static List<string> BuildCandidates(
+    private static List<string> BuildExplicitCandidates(
         string? configDirectory,
-        string? nightCodeForgeHome,
-        string? localAppData,
+        Func<string, string?> environmentVariableAccessor,
+        string localAppDataDirectory,
         string? baseDirectory,
         string? currentDirectory)
     {
@@ -138,26 +79,40 @@ public sealed class DefaultKeyReader : IDefaultKeyReader
             candidates.Add(Path.Combine(trimmed, "config", KeyFileName));
         }
 
+        var nightCodeForgeHome = environmentVariableAccessor(HomeEnvironmentVariable);
         if (!string.IsNullOrWhiteSpace(nightCodeForgeHome))
         {
             candidates.Add(Path.Combine(nightCodeForgeHome.Trim(), "config", KeyFileName));
         }
 
+        if (!string.IsNullOrWhiteSpace(localAppDataDirectory))
+        {
+            candidates.Add(Path.Combine(localAppDataDirectory, "Programs", "NightCodeForge", "config", KeyFileName));
+        }
+
+        candidates.AddRange(BuildAdditionalCandidates(localAppDataDirectory, baseDirectory, currentDirectory));
+
+        return candidates.Distinct(StringComparer.OrdinalIgnoreCase).ToList();
+    }
+
+    private static List<string> BuildAdditionalCandidates(
+        string? localAppData,
+        string? baseDirectory,
+        string? currentDirectory)
+    {
+        var candidates = new List<string>();
+
         if (OperatingSystem.IsWindows())
         {
-            if (!string.IsNullOrWhiteSpace(localAppData))
+            var effectiveLocalAppData = localAppData ?? Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
+            if (!string.IsNullOrWhiteSpace(effectiveLocalAppData))
             {
-                candidates.Add(Path.Combine(localAppData, "Programs", "NightCodeForge", "config", KeyFileName));
-                candidates.Add(Path.Combine(localAppData, "NightCodeForge", "config", KeyFileName));
+                candidates.Add(Path.Combine(effectiveLocalAppData, "NightCodeForge", "config", KeyFileName));
             }
         }
-        else
+        else if (!string.IsNullOrWhiteSpace(localAppData))
         {
-            var userHome = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
-            if (!string.IsNullOrWhiteSpace(userHome))
-            {
-                candidates.Add(Path.Combine(userHome, ".nightcodeforge", "config", KeyFileName));
-            }
+            candidates.Add(Path.Combine(localAppData, "NightCodeForge", "config", KeyFileName));
         }
 
         AddSiblingRepoCandidates(candidates, currentDirectory);
@@ -189,7 +144,4 @@ public sealed class DefaultKeyReader : IDefaultKeyReader
             dir = dir.Parent;
         }
     }
-
-    private static IKeyProtector CreatePlatformProtector() =>
-        OperatingSystem.IsWindows() ? new DpapiKeyProtector() : new PlainKeyProtector();
 }
