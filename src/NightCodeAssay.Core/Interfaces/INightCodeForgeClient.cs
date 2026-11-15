@@ -14,4 +14,9 @@ public interface INightCodeForgeClient
         int workspaceId,
         CreateCompanionTriageRequestDto request,
         CancellationToken cancellationToken = default);
+
+    Task<CreateCompanionIdeationResponseDto?> CreateIdeationSessionAsync(
+        int workspaceId,
+        CreateCompanionTriageRequestDto request,
+        CancellationToken cancellationToken = default);
 }

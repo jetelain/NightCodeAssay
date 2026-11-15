@@ -13,7 +13,8 @@ namespace NightCodeAssay.App.ViewModels;
 public sealed record SessionUiCallbacks(
     Func<Task> TriggerCaptureAsync,
     Func<string, Task> CopyToClipboardAsync,
-    Action RequestExit);
+    Action RequestExit,
+    Action<string>? OpenShellTarget = null);
 
 public sealed partial class SessionControlViewModel : ObservableObject
 {
@@ -28,6 +29,7 @@ public sealed partial class SessionControlViewModel : ObservableObject
     private readonly Func<Task> _triggerCaptureAsync;
     private readonly Func<string, Task> _copyToClipboardAsync;
     private readonly Action _requestExit;
+    private readonly Action<string>? _openShellTarget;
 
     private CompanionConfigDto? _lastCompanionConfig;
     private SessionMetadata? _lastSession;
@@ -97,6 +99,7 @@ public sealed partial class SessionControlViewModel : ObservableObject
         _triggerCaptureAsync = uiCallbacks.TriggerCaptureAsync ?? throw new ArgumentNullException(nameof(uiCallbacks));
         _copyToClipboardAsync = uiCallbacks.CopyToClipboardAsync ?? throw new ArgumentNullException(nameof(uiCallbacks));
         _requestExit = uiCallbacks.RequestExit ?? throw new ArgumentNullException(nameof(uiCallbacks));
+        _openShellTarget = uiCallbacks.OpenShellTarget;
 
         _captureActiveWindowOnly = _options.Value.CaptureActiveWindowOnly;
 
@@ -120,6 +123,8 @@ public sealed partial class SessionControlViewModel : ObservableObject
 
     public bool CanSendToTriage => HasReportAvailable && SelectedWorkspace is { IsStandalone: false } && IsCompanionConnected;
 
+    public bool CanSendToIdeation => CanSendToTriage;
+
     public SessionMetadata? CurrentOrLastSession => _pipeline.ActiveSession ?? _lastSession;
 
     public CompanionConfigDto? LastCompanionConfig => _lastCompanionConfig;
@@ -133,17 +138,17 @@ public sealed partial class SessionControlViewModel : ObservableObject
     {
         OnPropertyChanged(nameof(SessionButtonLabel));
         OnPropertyChanged(nameof(HasReportAvailable));
-        OnPropertyChanged(nameof(CanSendToTriage));
+        NotifyHandoffStateChanged();
     }
 
     partial void OnSelectedWorkspaceChanged(WorkspaceItemViewModel? value)
     {
-        OnPropertyChanged(nameof(CanSendToTriage));
+        NotifyHandoffStateChanged();
     }
 
     partial void OnIsCompanionConnectedChanged(bool value)
     {
-        OnPropertyChanged(nameof(CanSendToTriage));
+        NotifyHandoffStateChanged();
     }
 
     public void SyncFromPipeline()
@@ -170,7 +175,15 @@ public sealed partial class SessionControlViewModel : ObservableObject
         UpdateCdpDisplay();
         RefreshHotkeyDisplay();
         OnPropertyChanged(nameof(HasReportAvailable));
+        NotifyHandoffStateChanged();
+    }
+
+    private void NotifyHandoffStateChanged()
+    {
         OnPropertyChanged(nameof(CanSendToTriage));
+        OnPropertyChanged(nameof(CanSendToIdeation));
+        SendToTriageCommand.NotifyCanExecuteChanged();
+        SendToIdeationCommand.NotifyCanExecuteChanged();
     }
 
     public void RefreshHotkeyDisplay()
@@ -377,7 +390,27 @@ public sealed partial class SessionControlViewModel : ObservableObject
     }
 
     [RelayCommand]
-    private async Task SendToTriageAsync()
+    public Task SendToTriageAsync() =>
+        SendReportHandoffAsync(
+            modeDisplayName: "Triage",
+            sendAsync: (workspaceId, request) => _companionClient.CreateTriageSessionAsync(workspaceId, request),
+            getDraftId: r => r.DraftId,
+            getEffectiveUrl: r => r.EffectiveUrl);
+
+    [RelayCommand]
+    public Task SendToIdeationAsync() =>
+        SendReportHandoffAsync(
+            modeDisplayName: "Ideation",
+            sendAsync: (workspaceId, request) => _companionClient.CreateIdeationSessionAsync(workspaceId, request),
+            getDraftId: r => r.DraftId,
+            getEffectiveUrl: r => r.EffectiveUrl);
+
+    private async Task SendReportHandoffAsync<TResponse>(
+        string modeDisplayName,
+        Func<int, CreateCompanionTriageRequestDto, Task<TResponse?>> sendAsync,
+        Func<TResponse, string?> getDraftId,
+        Func<TResponse, string?> getEffectiveUrl)
+        where TResponse : class
     {
         var session = CurrentOrLastSession;
         var workspace = SelectedWorkspace?.Workspace;
@@ -406,26 +439,27 @@ public sealed partial class SessionControlViewModel : ObservableObject
                 SessionDirectoryPath = session.SessionDirectoryPath
             };
 
-            var response = await _companionClient.CreateTriageSessionAsync(workspace.Id, request);
+            var response = await sendAsync(workspace.Id, request);
             if (response is null)
             {
-                StatusMessage = "Failed to send report to NightCodeForge Triage (check connection or copy to clipboard).";
+                StatusMessage = $"Failed to send report to NightCodeForge {modeDisplayName} (check connection or copy to clipboard).";
                 return;
             }
 
-            var draftSuffix = string.IsNullOrWhiteSpace(response.DraftId) ? string.Empty : $" #{response.DraftId}";
-            var targetUrl = response.EffectiveUrl;
+            var draftId = getDraftId(response);
+            var draftSuffix = string.IsNullOrWhiteSpace(draftId) ? string.Empty : $" #{draftId}";
+            var targetUrl = getEffectiveUrl(response);
             if (!string.IsNullOrWhiteSpace(targetUrl))
             {
                 var fullUrl = Uri.TryCreate(targetUrl, UriKind.Absolute, out _)
                     ? targetUrl
                     : $"{_options.Value.GetEffectiveNightCodeForgeUrl()}/{targetUrl.TrimStart('/')}";
                 OpenWithShell(fullUrl);
-                StatusMessage = $"Created NightCodeForge Triage draft{draftSuffix} and opened browser.";
+                StatusMessage = $"Created NightCodeForge {modeDisplayName} draft{draftSuffix} and opened browser.";
             }
             else
             {
-                StatusMessage = $"Created NightCodeForge Triage draft{draftSuffix}.";
+                StatusMessage = $"Created NightCodeForge {modeDisplayName} draft{draftSuffix}.";
             }
         }
         finally
@@ -441,6 +475,12 @@ public sealed partial class SessionControlViewModel : ObservableObject
     {
         try
         {
+            if (_openShellTarget is not null)
+            {
+                _openShellTarget(target);
+                return;
+            }
+
             Process.Start(new ProcessStartInfo(target) { UseShellExecute = true });
         }
         catch (Exception ex)

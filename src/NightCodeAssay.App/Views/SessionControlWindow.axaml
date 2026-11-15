@@ -160,7 +160,7 @@
                 BorderThickness="1">
           <StackPanel Spacing="8">
             <TextBlock Text="Report &amp; Handoff" FontWeight="SemiBold" FontSize="13" />
-            <Grid ColumnDefinitions="*,*" RowDefinitions="Auto,Auto" ColumnSpacing="8" RowSpacing="8">
+            <Grid ColumnDefinitions="*,*" RowDefinitions="Auto,Auto,Auto" ColumnSpacing="8" RowSpacing="8">
               <Button Grid.Row="0" Grid.Column="0"
                       Content="Open Session Folder"
                       HorizontalAlignment="Stretch"
@@ -173,19 +173,26 @@
                       HorizontalContentAlignment="Center"
                       Command="{Binding OpenReportFileCommand}"
                       IsEnabled="{Binding HasReportAvailable}" />
-              <Button Grid.Row="1" Grid.Column="0"
+              <Button Grid.Row="1" Grid.Column="0" Grid.ColumnSpan="2"
                       Content="Copy Report to Clipboard"
                       HorizontalAlignment="Stretch"
                       HorizontalContentAlignment="Center"
                       Command="{Binding CopyReportToClipboardCommand}"
                       IsEnabled="{Binding HasReportAvailable}" />
-              <Button Grid.Row="1" Grid.Column="1"
+              <Button Grid.Row="2" Grid.Column="0"
                       Content="Send to Triage"
                       HorizontalAlignment="Stretch"
                       HorizontalContentAlignment="Center"
                       Command="{Binding SendToTriageCommand}"
                       IsEnabled="{Binding CanSendToTriage}"
-                      ToolTip.Tip="Available when connected to NightCodeForge with a linked workspace." />
+                      ToolTip.Tip="Immediately starts NightCodeForge's triage agent with the exploratory report. Available when connected to NightCodeForge with a linked workspace." />
+              <Button Grid.Row="2" Grid.Column="1"
+                      Content="Send to Ideation"
+                      HorizontalAlignment="Stretch"
+                      HorizontalContentAlignment="Center"
+                      Command="{Binding SendToIdeationCommand}"
+                      IsEnabled="{Binding CanSendToIdeation}"
+                      ToolTip.Tip="Opens a NightCodeForge Ideation session with the exploratory report pre-filled in the prompt. Available when connected to NightCodeForge with a linked workspace." />
             </Grid>
           </StackPanel>
         </Border>

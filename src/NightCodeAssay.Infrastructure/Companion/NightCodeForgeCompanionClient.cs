@@ -1,5 +1,6 @@
 using System.Net.Http.Json;
 using System.Text.Json;
+using System.Text.Json.Serialization.Metadata;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using NightCodeAssay.Core.Configuration;
@@ -89,16 +90,41 @@ public sealed class NightCodeForgeCompanionClient : INightCodeForgeClient
         }
     }
 
-    public async Task<CreateCompanionTriageResponseDto?> CreateTriageSessionAsync(
+    public Task<CreateCompanionTriageResponseDto?> CreateTriageSessionAsync(
         int workspaceId,
         CreateCompanionTriageRequestDto requestBody,
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken = default) =>
+        PostHandoffAsync(
+            relativePath: $"/api/companion/workspaces/{workspaceId}/triage",
+            handoffName: "triage",
+            requestBody: requestBody,
+            responseTypeInfo: CompanionJsonSerializerContext.Default.CreateCompanionTriageResponseDto,
+            cancellationToken: cancellationToken);
+
+    public Task<CreateCompanionIdeationResponseDto?> CreateIdeationSessionAsync(
+        int workspaceId,
+        CreateCompanionTriageRequestDto requestBody,
+        CancellationToken cancellationToken = default) =>
+        PostHandoffAsync(
+            relativePath: $"/api/companion/workspaces/{workspaceId}/ideation",
+            handoffName: "ideation",
+            requestBody: requestBody,
+            responseTypeInfo: CompanionJsonSerializerContext.Default.CreateCompanionIdeationResponseDto,
+            cancellationToken: cancellationToken);
+
+    private async Task<TResponse?> PostHandoffAsync<TResponse>(
+        string relativePath,
+        string handoffName,
+        CreateCompanionTriageRequestDto requestBody,
+        JsonTypeInfo<TResponse> responseTypeInfo,
+        CancellationToken cancellationToken)
+        where TResponse : class
     {
         ArgumentNullException.ThrowIfNull(requestBody);
 
         try
         {
-            using var request = CreateRequest(HttpMethod.Post, $"/api/companion/workspaces/{workspaceId}/triage");
+            using var request = CreateRequest(HttpMethod.Post, relativePath);
             request.Content = JsonContent.Create(
                 requestBody,
                 CompanionJsonSerializerContext.Default.CreateCompanionTriageRequestDto);
@@ -110,19 +136,19 @@ public sealed class NightCodeForgeCompanionClient : INightCodeForgeClient
             if (!response.IsSuccessStatusCode)
             {
                 IsConnected = false;
-                _logger.LogWarning("NightCodeForge triage handoff failed with HTTP {StatusCode}.", (int)response.StatusCode);
+                _logger.LogWarning("NightCodeForge {HandoffName} handoff failed with HTTP {StatusCode}.", handoffName, (int)response.StatusCode);
                 return null;
             }
 
             IsConnected = true;
             return await response.Content.ReadFromJsonAsync(
-                CompanionJsonSerializerContext.Default.CreateCompanionTriageResponseDto,
+                responseTypeInfo,
                 timeoutCts.Token).ConfigureAwait(false);
         }
         catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException or JsonException or InvalidOperationException)
         {
             IsConnected = false;
-            _logger.LogWarning(ex, "Unable to reach NightCodeForge triage handoff endpoint.");
+            _logger.LogWarning(ex, "Unable to reach NightCodeForge {HandoffName} handoff endpoint.", handoffName);
             return null;
         }
     }

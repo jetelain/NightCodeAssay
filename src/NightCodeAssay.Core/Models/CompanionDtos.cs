@@ -105,6 +105,27 @@ public sealed record CreateCompanionTriageResponseDto
     public string? EffectiveUrl => !string.IsNullOrWhiteSpace(TriageUrl) ? TriageUrl : Url;
 }
 
+public sealed record CreateCompanionIdeationResponseDto
+{
+    [JsonPropertyName("draftId")]
+    public string? DraftId { get; init; }
+
+    [JsonPropertyName("workspaceId")]
+    public int WorkspaceId { get; init; }
+
+    [JsonPropertyName("title")]
+    public string? Title { get; init; }
+
+    [JsonPropertyName("ideationUrl")]
+    public string? IdeationUrl { get; init; }
+
+    [JsonPropertyName("url")]
+    public string? Url { get; init; }
+
+    [JsonIgnore]
+    public string? EffectiveUrl => !string.IsNullOrWhiteSpace(IdeationUrl) ? IdeationUrl : Url;
+}
+
 [JsonSourceGenerationOptions(PropertyNameCaseInsensitive = true)]
 [JsonSerializable(typeof(CompanionConfigDto))]
 [JsonSerializable(typeof(CompanionOpenAiConfigDto))]
@@ -113,6 +134,7 @@ public sealed record CreateCompanionTriageResponseDto
 [JsonSerializable(typeof(IReadOnlyList<CompanionWorkspaceDto>))]
 [JsonSerializable(typeof(CreateCompanionTriageRequestDto))]
 [JsonSerializable(typeof(CreateCompanionTriageResponseDto))]
+[JsonSerializable(typeof(CreateCompanionIdeationResponseDto))]
 public partial class CompanionJsonSerializerContext : JsonSerializerContext
 {
 }
