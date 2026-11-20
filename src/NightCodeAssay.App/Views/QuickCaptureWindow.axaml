@@ -11,10 +11,10 @@
         WindowDecorations="None"
         WindowStartupLocation="CenterScreen">
 
-  <Border Background="#151922"
-          BorderBrush="#3F9EFF"
+  <Border Background="{DynamicResource NightCodeBgCard}"
+          BorderBrush="{DynamicResource SemiColorPrimary}"
           BorderThickness="1.5"
-          CornerRadius="10"
+          CornerRadius="12"
           Padding="16"
           PointerPressed="OnWindowBorderPointerPressed">
     <Grid RowDefinitions="Auto,*,Auto,Auto,Auto" RowSpacing="12">
@@ -29,7 +29,11 @@
             PointerPressed="OnHeaderPointerPressed">
         <StackPanel Grid.Column="0" Spacing="2">
           <StackPanel Orientation="Horizontal" Spacing="8">
-            <TextBlock Text="NightCode Assay — Quick Capture" FontSize="15" FontWeight="Bold" />
+			  <StackPanel Grid.Row="0" Grid.Column="0" Orientation="Horizontal" Spacing="0" VerticalAlignment="Center">
+				  <TextBlock Text="NightCode" FontSize="15" FontWeight="Bold" />
+				  <TextBlock Text="Assay" FontSize="15" FontWeight="ExtraBold" Foreground="#6366f1" />
+			  </StackPanel>
+			  <TextBlock Text="— Quick Capture" FontSize="15" FontWeight="Bold" />
             <TextBlock Text="(Drag here to move window)"
                        FontSize="11"
                        Foreground="{DynamicResource SemiColorText2}"
@@ -49,10 +53,10 @@
       <!-- Zoomable & Pannable Screenshot Preview + Interactive Red Highlight Canvas -->
       <Border x:Name="PreviewViewportBorder"
               Grid.Row="1"
-              Background="#0B0E14"
+              Background="{DynamicResource NightCodeBgCanvas}"
               BorderBrush="{DynamicResource SemiColorBorder}"
               BorderThickness="1"
-              CornerRadius="6"
+              CornerRadius="8"
               ClipToBounds="True"
               SizeChanged="OnPreviewViewportSizeChanged">
         <ScrollViewer x:Name="PreviewScrollViewer"
