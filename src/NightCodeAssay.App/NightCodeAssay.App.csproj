@@ -52,4 +52,25 @@
     <InternalsVisibleTo Include="NightCodeAssay.Tests" />
   </ItemGroup>
 
+  <Target Name="PruneUnsupportedRuntimes"
+          AfterTargets="ComputeFilesToPublish"
+          Condition="'$(RuntimeIdentifier)' == ''">
+    <ItemGroup>
+      <_PrunedRuntimeFiles Include="@(ResolvedFileToPublish)"
+                           Condition="$([System.String]::Copy('%(ResolvedFileToPublish.RelativePath)').Replace('\', '/').ToLowerInvariant().StartsWith('runtimes/'))
+                                      AND (
+                                        $([System.String]::Copy('%(ResolvedFileToPublish.RelativePath)').ToLowerInvariant().EndsWith('.pdb'))
+                                        OR (
+                                          !$([System.String]::Copy('%(ResolvedFileToPublish.RelativePath)').Replace('\', '/').ToLowerInvariant().StartsWith('runtimes/win/'))
+                                          AND !$([System.String]::Copy('%(ResolvedFileToPublish.RelativePath)').Replace('\', '/').ToLowerInvariant().StartsWith('runtimes/win-x64/'))
+                                          AND !$([System.String]::Copy('%(ResolvedFileToPublish.RelativePath)').Replace('\', '/').ToLowerInvariant().StartsWith('runtimes/win-arm64/'))
+                                          AND !$([System.String]::Copy('%(ResolvedFileToPublish.RelativePath)').Replace('\', '/').ToLowerInvariant().StartsWith('runtimes/linux-x64/'))
+                                          AND !$([System.String]::Copy('%(ResolvedFileToPublish.RelativePath)').Replace('\', '/').ToLowerInvariant().StartsWith('runtimes/linux-arm64/'))
+                                          AND !$([System.String]::Copy('%(ResolvedFileToPublish.RelativePath)').Replace('\', '/').ToLowerInvariant().StartsWith('runtimes/osx/'))
+                                        )
+                                      )" />
+      <ResolvedFileToPublish Remove="@(_PrunedRuntimeFiles)" />
+    </ItemGroup>
+  </Target>
+
 </Project>
